@@ -1,8 +1,8 @@
 'use client';
 /**
  * Overhead map: the live forest from straight above (not a chase camera). Drag pans,
- * the wheel and the on-screen buttons zoom. The rover's trace is a glowing line and
- * an HTML "robot" label tracks the body.
+ * the wheel and the on-screen buttons zoom. The rover's full-run path is a glowing line
+ * and an HTML "robot" label tracks the body.
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line } from '@react-three/drei';
@@ -130,11 +130,11 @@ function PathHistory({ world }: { world: World }) {
     acc.current += dt;
     if (acc.current < 0.12) return;
     acc.current = 0;
-    const { trace, rover } = useMissionStore.getState();
-    const key = `${trace.length}:${rover.x.toFixed(1)}:${rover.z.toFixed(1)}`;
+    const { drivenPath, rover } = useMissionStore.getState();
+    const key = `${drivenPath.length}:${rover.x.toFixed(1)}:${rover.z.toFixed(1)}`;
     if (key === lastKey.current) return;
     lastKey.current = key;
-    const raw = [...trace, { x: rover.x, z: rover.z }];
+    const raw = [...drivenPath, { x: rover.x, z: rover.z }];
     const src: { x: number; z: number }[] = [];
     for (const p of raw) {
       const prev = src[src.length - 1];

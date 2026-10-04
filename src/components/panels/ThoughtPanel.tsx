@@ -5,9 +5,12 @@
  * status line is derived from the live sim (phase, distance, last result) on a
  * 5–15s cadence. Paused runs and a quiet mock decider do not get filler text.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { FeedEntry } from '@/lib/types';
 import { useMissionStore, type MissionState } from '@/store/missionStore';
+import PlaceGraph from '@/components/panels/PlaceGraph';
+
+type ThoughtTab = 'transcript' | 'graph';
 
 type Line = { id: string; t: number; kind: string; text: string };
 
@@ -34,10 +37,16 @@ const TONE: Record<string, string> = {
   status: 'text-slate-600',
 };
 
+const TABS: { id: ThoughtTab; label: string }[] = [
+  { id: 'transcript', label: 'Thoughts' },
+  { id: 'graph', label: 'Place graph' },
+];
+
 export default function ThoughtPanel() {
   const feed = useMissionStore((s) => s.feed);
   const status = useMissionStore((s) => s.status);
   const error = useMissionStore((s) => s.error);
+  const [tab, setTab] = useState<ThoughtTab>('transcript');
   const [derived, setDerived] = useState<Line[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -82,23 +91,73 @@ export default function ThoughtPanel() {
 
   const tail = lines[lines.length - 1]?.id;
   useEffect(() => {
+    if (tab !== 'transcript') return;
     const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [tail]);
+    if (!el) return;
+    const pin = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    pin();
+    const id = requestAnimationFrame(pin);
+    return () => cancelAnimationFrame(id);
+  }, [tail, tab]);
 
   const waiting = status === 'waiting_for_gemini';
 
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    e.preventDefault();
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    setTab(next.id);
+    document.getElementById(`thought-tab-${next.id}`)?.focus();
+  };
+
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]" aria-label="Robot's thought process">
-      <h2 className="shrink-0 px-3 pb-1 pt-2 text-center text-sm font-medium text-slate-800">Robot&apos;s thought process</h2>
+      <h2 className="shrink-0 truncate px-2 pt-1.5 text-center text-xs font-medium text-slate-800">Robot&apos;s thought process</h2>
+      <div role="tablist" aria-label="Thought process views" className="flex shrink-0 justify-center gap-1 px-2 pb-1 pt-1" onKeyDown={onTabKey}>
+        {TABS.map((t) => {
+          const selected = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              id={`thought-tab-${t.id}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls={`thought-panel-${t.id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => setTab(t.id)}
+              className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${selected ? 'bg-slate-800 text-white' : 'bg-white/80 text-slate-700 hover:bg-white'}`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
       {error && <p className="shrink-0 px-3 pb-1 text-xs text-rose-700">{error}</p>}
-      <div ref={scroller} role="log" aria-label="Thought transcript" className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        {lines.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Thoughts will show up here during a run.</p>}
-        {lines.map((line) => (
-          <p key={line.id} className={`border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
-            {line.text}
-          </p>
-        ))}
+      <div className="relative min-h-0 flex-1">
+        <div
+          id="thought-panel-transcript"
+          role="tabpanel"
+          aria-labelledby="thought-tab-transcript"
+          hidden={tab !== 'transcript'}
+          ref={scroller}
+          className="absolute inset-0 overflow-y-auto px-3 pb-2"
+        >
+          <div role="log" aria-label="Thought transcript">
+            {lines.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Thoughts will show up here during a run.</p>}
+            {lines.map((line) => (
+              <p key={line.id} className={`border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
+                {line.text}
+              </p>
+            ))}
+          </div>
+        </div>
+        <div id="thought-panel-graph" role="tabpanel" aria-labelledby="thought-tab-graph" hidden={tab !== 'graph'} className="absolute inset-0">
+          <PlaceGraph />
+        </div>
       </div>
       {waiting && <p className="shrink-0 px-3 pb-2 text-[11px] text-slate-600">Waiting for the next decision…</p>}
     </section>

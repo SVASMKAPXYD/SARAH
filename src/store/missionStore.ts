@@ -40,7 +40,10 @@ export interface MissionState {
   rover: RoverState;
   map: MapState;
   lastNodeId: string;
+  /** Partial polyline since the last node. Cleared when a node is reached; used for edges and retrace. */
   trace: Vec2[];
+  /** Every pose of this run, for the overhead-map trail. Cleared only by reset or regenerate. */
+  drivenPath: Vec2[];
   traceMinClearanceM: number;
   distanceTraveledM: number;
   exec: ExecState | null;
@@ -91,6 +94,7 @@ export const useMissionStore = create<MissionState>(() => ({
   map: createMapState(),
   lastNodeId: 'BASE',
   trace: [],
+  drivenPath: [],
   traceMinClearanceM: 30,
   distanceTraveledM: 0,
   exec: null,
