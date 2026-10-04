@@ -1,8 +1,8 @@
 'use client';
 /**
  * Robot point-of-view canvas: third-person chase or first-person sensor pose, photo or
- * thermal. The night grade (light lift + blue tint) is display-only — SensorRig's
- * offscreen captures keep the original moonlight so Gemini still sees the real night.
+ * thermal. A display-only exposure lift brightens night without recoloring the sky,
+ * so day and evening stay distinct. SensorRig's offscreen captures skip that lift.
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo } from 'react';
@@ -16,8 +16,6 @@ import { Atmosphere, FollowCamera, Sky, TruthLayerToggle, WorldMeshes } from './
 
 export type PovPerson = 'third' | 'first';
 
-const NIGHT_BG = new THREE.Color('#163864');
-const NIGHT_FOG = new THREE.Color('#2c558c');
 const BLACK = new THREE.Color('#000000');
 
 function thermalColor(t: number): THREE.Color {
@@ -77,7 +75,7 @@ function isFillLight(o: THREE.Object3D): o is THREE.AmbientLight | THREE.Hemisph
 /**
  * Wraps the canvas render. SensorRig calls gl.render with a camera flagged
  * `userData.sensor`; those passes stay ungraded. The on-screen camera gets either
- * a lifted night grade or a thermal false-color pass.
+ * an exposure lift that fades toward daytime, or a thermal false-color pass.
  */
 function DisplayGrade() {
   const gl = useThree((s) => s.gl);
@@ -119,30 +117,20 @@ function DisplayGrade() {
         }
         return;
       }
+      const level = useMissionStore.getState().params.light_level;
+      const lift = 1 + (1 - level) * 1.15;
       const lights: Array<[THREE.Light, number]> = [];
       scene.traverse((o) => {
         if (!isFillLight(o)) return;
         lights.push([o, o.intensity]);
-        o.intensity *= 2.35;
+        o.intensity *= lift;
       });
-      const prevBg = scene.background;
-      const fog = scene.fog;
-      const prevFog = fog ? fog.color.clone() : null;
-      const prevNear = fog && 'near' in fog ? fog.near : null;
-      const prevFar = fog && 'far' in fog ? fog.far : null;
       const prevExp = gl.toneMappingExposure;
-      scene.background = NIGHT_BG;
-      if (fog && prevFog) fog.color.copy(NIGHT_FOG);
-      if (fog && 'far' in fog && prevFar !== null && prevFar < 180) fog.far = 180;
-      gl.toneMappingExposure = prevExp * 1.45;
+      gl.toneMappingExposure = prevExp * (1 + (1 - level) * 0.35);
       try {
         orig(scene, camera);
       } finally {
         for (const [light, intensity] of lights) light.intensity = intensity;
-        scene.background = prevBg;
-        if (fog && prevFog) fog.color.copy(prevFog);
-        if (fog && 'near' in fog && prevNear !== null) fog.near = prevNear;
-        if (fog && 'far' in fog && prevFar !== null) fog.far = prevFar;
         gl.toneMappingExposure = prevExp;
       }
     };

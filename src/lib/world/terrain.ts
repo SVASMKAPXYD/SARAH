@@ -6,8 +6,8 @@
  * serialized into an ObservationPacket and never sent to Gemini.
  */
 import { SURVIVOR_MIN_DIST_FROM_BASE_M, WORLD_HALF_SIZE_M } from '../constants';
-import { bearingDeg, dirFromBearing, distance, mulberry32, normDeg, type Vec2 } from '../geo';
-import type { TerrainParams } from '../types';
+import { bearingDeg, dirFromBearing, distance, mulberry32, normDeg, polylineLength, type Vec2 } from '../geo';
+import type { SurvivorSituation, TerrainParams } from '../gemini/schema';
 
 export type ObstacleKind = 'TREE' | 'ROCK' | 'FALLEN_LOG' | 'WATER';
 
@@ -49,8 +49,16 @@ export interface FungiPatch {
   mushrooms: Vec2[];
 }
 
+/** A car that loops a trail. Pose is sampled in the renderer so it moves while the mission is idle. */
+export interface TrailCar {
+  path: Vec2[];
+  offsetM: number;
+  speedMps: number;
+  color: string;
+}
+
 export interface WorldTruth {
-  survivor: { x: number; z: number; headingDeg: number };
+  survivor: { x: number; z: number; headingDeg: number; situation: SurvivorSituation };
   foxes: Vec2[];
   deer: Vec2[];
   trails: Vec2[][];
@@ -66,6 +74,7 @@ export interface World {
   rocks: Rock[];
   water: Water | null;
   fungi: FungiPatch[];
+  cars: TrailCar[];
   base: Vec2;
   /** Flat obstacle list for 2D raycasts (trees, rocks, log circles, water circles). */
   obstacles: Obstacle[];
@@ -100,11 +109,14 @@ export function generateWorld(params: TerrainParams, seed: number): World {
   const base: Vec2 = { x: 0, z: 0 };
   const inBounds = (p: Vec2, margin = 4) => Math.abs(p.x) < half - margin && Math.abs(p.z) < half - margin;
 
-  // --- Heightmap: gentle low-frequency undulation scaled by slope. ---
+  // --- Heightmap: hills from slope, plus high-frequency roughness from bumpiness. ---
   const amp = 1 + params.slope * 7;
-  const heightAt = (x: number, z: number) =>
+  const bumpAmp = params.bumpiness * 3.4;
+  const baseHeight = (x: number, z: number) =>
     amp * (0.6 * Math.sin(x * 0.045 + 1.3) * Math.cos(z * 0.038) + 0.4 * Math.sin((x + z) * 0.07 + 0.4)) -
-    amp * 0.1;
+    amp * 0.1 +
+    bumpAmp * Math.sin(x * 0.52 + 1.2) * Math.cos(z * 0.47 + 0.4) +
+    bumpAmp * 0.45 * Math.sin(x * 1.15 + z * 0.92);
   // TODO(P1): steep-slope detection (>35°) for STEEP_SLOPE LiDAR hits and collision stops.
 
   // --- Trails: a main trail north from base plus branches (branchiness). ---
@@ -169,6 +181,7 @@ export function generateWorld(params: TerrainParams, seed: number): World {
     survivor = { x: end.x + off.x * 8, z: end.z + off.z * 8 };
   }
   const survivorHeading = normDeg(rnd() * 360);
+  const situation = params.survivor_situation;
 
   // --- Water ---
   let water: Water | null = null;
@@ -220,6 +233,7 @@ export function generateWorld(params: TerrainParams, seed: number): World {
 
   // --- Fallen logs (some across trails) ---
   const logs: Log[] = [];
+  const rocks: Rock[] = [];
   const logTarget = Math.round(params.fallen_logs * 28);
   for (let i = 0; i < logTarget * 4 && logs.length < logTarget; i++) {
     const onTrail = rnd() < 0.35;
@@ -233,18 +247,40 @@ export function generateWorld(params: TerrainParams, seed: number): World {
     if (distance(p, base) < 10 || distance(p, survivor) < 4 || nearWater(p, 2)) continue;
     logs.push({ x: p.x, z: p.z, lengthM: 3 + rnd() * 4, angleDeg: rnd() * 180, r: 0.3 + rnd() * 0.15 });
   }
-  // A log for the survivor to sit against (plan §2 storyboard: "seated against a log").
+  // Seated: a log behind them. Obstacle: a boulder and a log they are pinned against.
   const back = dirFromBearing(survivorHeading + 180);
-  logs.push({
-    x: survivor.x + back.x * 0.9,
-    z: survivor.z + back.z * 0.9,
-    lengthM: 3.5,
-    angleDeg: normDeg(survivorHeading + 90),
-    r: 0.35,
-  });
+  const ahead = dirFromBearing(survivorHeading);
+  if (situation === 'obstacle') {
+    rocks.push({ x: survivor.x + ahead.x * 1.5, z: survivor.z + ahead.z * 1.5, r: 1.25 });
+    logs.push({
+      x: survivor.x + ahead.x * 0.7,
+      z: survivor.z + ahead.z * 0.7,
+      lengthM: 4.2,
+      angleDeg: normDeg(survivorHeading + 80),
+      r: 0.42,
+    });
+  } else if (situation !== 'ditch') {
+    logs.push({
+      x: survivor.x + back.x * 0.9,
+      z: survivor.z + back.z * 0.9,
+      lengthM: 3.5,
+      angleDeg: normDeg(survivorHeading + 90),
+      r: 0.35,
+    });
+  }
+  if (situation === 'slope') {
+    const side = dirFromBearing(survivorHeading + 90);
+    for (let i = 0; i < 5; i++) {
+      const t = (i - 2) * 1.6;
+      rocks.push({
+        x: survivor.x + side.x * t + ahead.x * 1.2,
+        z: survivor.z + side.z * t + ahead.z * 1.2,
+        r: 0.7 + (i % 2) * 0.35,
+      });
+    }
+  }
 
   // --- Rocks ---
-  const rocks: Rock[] = [];
   const rockTarget = 10 + Math.round(params.slope * 20);
   for (let i = 0; i < rockTarget * 3 && rocks.length < rockTarget; i++) {
     const p = { x: (rnd() - 0.5) * 2 * half, z: (rnd() - 0.5) * 2 * half };
@@ -281,6 +317,46 @@ export function generateWorld(params: TerrainParams, seed: number): World {
   for (let i = 0; i < params.fox_count; i++) foxes.push(animalSpot());
   const deer: Vec2[] = [];
   for (let i = 0; i < params.deer_count; i++) deer.push(animalSpot());
+
+  const carColors = ['#c23b3b', '#e8e8e8', '#1f4e8c', '#e0a020'];
+  const cars: TrailCar[] = [];
+  for (let i = 0; i < params.car_count; i++) {
+    const trail = trails[i % trails.length];
+    if (!trail || trail.length < 2) continue;
+    const len = Math.max(8, polylineLength(trail));
+    cars.push({
+      path: trail,
+      offsetM: 12 + (i * len) / params.car_count,
+      speedMps: 5 + (i % 3) * 1.5,
+      color: carColors[i % carColors.length],
+    });
+  }
+
+  // Local landform around the survivor, applied after placement so x/z stay put.
+  let heightAt = baseHeight;
+  if (situation === 'ditch') {
+    const fwd = dirFromBearing(survivorHeading);
+    const right = dirFromBearing(survivorHeading + 90);
+    const prev = heightAt;
+    heightAt = (x, z) => {
+      const dx = x - survivor.x;
+      const dz = z - survivor.z;
+      const along = dx * fwd.x + dz * fwd.z;
+      const across = dx * right.x + dz * right.z;
+      const well = Math.exp(-(along * along) / 22) * Math.exp(-(across * across) / 1.7);
+      return prev(x, z) - 1.8 * well;
+    };
+  } else if (situation === 'slope') {
+    const right = dirFromBearing(survivorHeading + 90);
+    const prev = heightAt;
+    heightAt = (x, z) => {
+      const dx = x - survivor.x;
+      const dz = z - survivor.z;
+      const across = dx * right.x + dz * right.z;
+      const local = Math.exp(-(dx * dx + dz * dz) / 90);
+      return prev(x, z) + across * 0.7 * local;
+    };
+  }
 
   // --- Flat obstacle list for raycasts ---
   const obstacles: Obstacle[] = [];
@@ -319,8 +395,36 @@ export function generateWorld(params: TerrainParams, seed: number): World {
     rocks,
     water,
     fungi,
+    cars,
     base,
     obstacles,
-    truth: { survivor: { ...survivor, headingDeg: survivorHeading }, foxes, deer, trails },
+    truth: { survivor: { ...survivor, headingDeg: survivorHeading, situation }, foxes, deer, trails },
   };
+}
+
+/** Point and heading at a distance along a polyline, wrapping so cars loop. */
+export function poseAlongPath(path: Vec2[], distanceM: number): { x: number; z: number; headingDeg: number } {
+  if (path.length === 0) return { x: 0, z: 0, headingDeg: 0 };
+  if (path.length === 1) return { x: path[0].x, z: path[0].z, headingDeg: 0 };
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const len = distance(path[i - 1], path[i]);
+    lens.push(len);
+    total += len;
+  }
+  if (total < 1e-3) return { x: path[0].x, z: path[0].z, headingDeg: 0 };
+  let d = ((distanceM % total) + total) % total;
+  for (let i = 0; i < lens.length; i++) {
+    if (d <= lens[i] || i === lens.length - 1) {
+      const span = lens[i] || 1;
+      const t = Math.min(1, d / span);
+      const a = path[i];
+      const b = path[i + 1];
+      return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, headingDeg: bearingDeg(a, b) };
+    }
+    d -= lens[i];
+  }
+  const last = path[path.length - 1];
+  return { x: last.x, z: last.z, headingDeg: 0 };
 }

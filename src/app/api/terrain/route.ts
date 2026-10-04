@@ -1,12 +1,14 @@
 /**
  * POST /api/terrain  { prompt, current?: TerrainParams } → { params: TerrainParams, source }
- * Gemini (structured output) when a key is present, otherwise a keyword mock.
+ * Gemini structured output maps the sentence onto TerrainParams. The keyword mock is used
+ * only when GEMINI_API_KEY is missing or `?mock=1` is set. DECIDER=mock does not apply here:
+ * that flag is for /api/decide. A Gemini failure is returned as an error, not rewritten as mock.
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { geminiTerrain, hasGeminiKey } from '@/lib/gemini/client';
 import { mockTerrain } from '@/lib/gemini/mock';
-import { DEFAULT_TERRAIN_PARAMS, TerrainParamsSchema } from '@/lib/gemini/schema';
+import { DEFAULT_TERRAIN_PARAMS, parseTerrainParams, TerrainParamsSchema } from '@/lib/gemini/schema';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,8 +26,8 @@ export async function POST(req: Request) {
   } catch (e) {
     return NextResponse.json({ error: `bad request: ${(e as Error).message}` }, { status: 400 });
   }
-  const current = body.current ?? DEFAULT_TERRAIN_PARAMS;
-  const useMock = url.searchParams.get('mock') === '1' || process.env.DECIDER === 'mock' || !hasGeminiKey();
+  const current = body.current ? parseTerrainParams(body.current) : DEFAULT_TERRAIN_PARAMS;
+  const useMock = url.searchParams.get('mock') === '1' || !hasGeminiKey();
 
   if (useMock) {
     return NextResponse.json({ params: TerrainParamsSchema.parse(mockTerrain(body.prompt, current)), source: 'mock', latencyMs: 0 });

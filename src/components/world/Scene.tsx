@@ -15,7 +15,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { HEADLAMP_RANGE_M, THERMAL_TEMPERATURE } from '@/lib/constants';
 import { DEG, dirFromBearing, rayCircle } from '@/lib/geo';
-import type { World } from '@/lib/world/terrain';
+import { stepAnimals, type AnimalState } from '@/lib/world/animals';
+import { poseAlongPath, type World } from '@/lib/world/terrain';
 import { useMissionStore, useUIStore } from '@/store/missionStore';
 
 export const TRUTH_LAYER = 1;
@@ -67,7 +68,7 @@ function Instances({
 function Ground({ world }: { world: World }) {
   const geom = useMemo(() => {
     const size = world.halfSize * 2 + 40;
-    const seg = 110;
+    const seg = 150;
     const g = new THREE.PlaneGeometry(size, size, seg, seg);
     g.rotateX(-Math.PI / 2);
     const pos = g.attributes.position;
@@ -307,27 +308,43 @@ function Survivor({ world }: { world: World }) {
   const y = world.heightAt(s.x, s.z);
   const rotY = -s.headingDeg * DEG;
   const t = THERMAL_TEMPERATURE.person;
+  const inDitch = s.situation === 'ditch';
   return (
     <group position={[s.x, y, s.z]} rotation={[0, rotY, 0]}>
-      {/* seated: legs forward, torso upright, head */}
-      <mesh position={[0, 0.2, -0.35]} layers={TRUTH_LAYER} userData={{ thermal: t }}>
+      {inDitch && (
+        <>
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} userData={{ thermal: THERMAL_TEMPERATURE.ground }}>
+            <planeGeometry args={[3.2, 8]} />
+            <meshStandardMaterial color="#2a2418" roughness={1} />
+          </mesh>
+          <mesh position={[1.55, 0.95, 0]} userData={{ thermal: THERMAL_TEMPERATURE.ground }}>
+            <boxGeometry args={[0.7, 0.7, 8]} />
+            <meshStandardMaterial color="#6a5538" roughness={1} />
+          </mesh>
+          <mesh position={[-1.55, 0.95, 0]} userData={{ thermal: THERMAL_TEMPERATURE.ground }}>
+            <boxGeometry args={[0.7, 0.7, 8]} />
+            <meshStandardMaterial color="#6a5538" roughness={1} />
+          </mesh>
+        </>
+      )}
+      {/* seated, or lowered in the ditch: legs forward, torso upright, head */}
+      <mesh position={[0, inDitch ? 0.05 : 0.2, -0.35]} userData={{ thermal: t }}>
         <boxGeometry args={[0.42, 0.22, 0.7]} />
         <meshStandardMaterial color="#2f3f6b" />
       </mesh>
-      <mesh position={[0, 0.65, 0]} layers={TRUTH_LAYER} userData={{ thermal: t }}>
+      <mesh position={[0, inDitch ? 0.42 : 0.65, 0]} userData={{ thermal: t }}>
         <boxGeometry args={[0.5, 0.7, 0.32]} />
         <meshStandardMaterial color="#e8641b" />
       </mesh>
-      {/* reflective strips */}
-      <mesh position={[0, 0.72, -0.17]} layers={TRUTH_LAYER} userData={{ thermal: t }}>
+      <mesh position={[0, inDitch ? 0.5 : 0.72, -0.17]} userData={{ thermal: t }}>
         <boxGeometry args={[0.52, 0.05, 0.02]} />
         <meshStandardMaterial color="#ffffff" emissive="#dfe8ff" emissiveIntensity={1.5} />
       </mesh>
-      <mesh position={[0, 0.5, -0.17]} layers={TRUTH_LAYER} userData={{ thermal: t }}>
+      <mesh position={[0, inDitch ? 0.28 : 0.5, -0.17]} userData={{ thermal: t }}>
         <boxGeometry args={[0.52, 0.05, 0.02]} />
         <meshStandardMaterial color="#ffffff" emissive="#dfe8ff" emissiveIntensity={1.5} />
       </mesh>
-      <mesh position={[0, 1.15, 0]} layers={TRUTH_LAYER} userData={{ thermal: t }}>
+      <mesh position={[0, inDitch ? 0.85 : 1.15, 0]} userData={{ thermal: t }}>
         <sphereGeometry args={[0.14, 10, 8]} />
         <meshStandardMaterial color="#d9a37e" />
       </mesh>
@@ -335,11 +352,64 @@ function Survivor({ world }: { world: World }) {
   );
 }
 
+function Cars({ world }: { world: World }) {
+  const refs = useRef<(THREE.Group | null)[]>([]);
+  useFrame(({ clock }) => {
+    world.cars.forEach((car, i) => {
+      const g = refs.current[i];
+      if (!g) return;
+      const pose = poseAlongPath(car.path, car.offsetM + clock.elapsedTime * car.speedMps);
+      g.position.set(pose.x, world.heightAt(pose.x, pose.z), pose.z);
+      g.rotation.y = -pose.headingDeg * DEG;
+    });
+  });
+  if (world.cars.length === 0) return null;
+  return (
+    <>
+      {world.cars.map((car, i) => (
+        <group
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+        >
+          <mesh position={[0, 0.55, 0]} userData={{ thermal: 0.35 }}>
+            <boxGeometry args={[1.7, 0.7, 4.2]} />
+            <meshStandardMaterial color={car.color} metalness={0.45} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 1.05, -0.15]} userData={{ thermal: 0.3 }}>
+            <boxGeometry args={[1.45, 0.5, 1.7]} />
+            <meshStandardMaterial color="#d5e2ee" metalness={0.15} roughness={0.15} />
+          </mesh>
+          {[
+            [-0.85, 1.25],
+            [0.85, 1.25],
+            [-0.85, -1.25],
+            [0.85, -1.25],
+          ].map(([x, z]) => (
+            <mesh key={`${x}${z}`} position={[x, 0.28, z]} rotation={[0, 0, Math.PI / 2]} userData={{ thermal: 0.2 }}>
+              <cylinderGeometry args={[0.32, 0.32, 0.28, 10]} />
+              <meshStandardMaterial color="#1a1a1a" roughness={1} />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </>
+  );
+}
+
 function Animals({ world }: { world: World }) {
   const refs = useRef<Map<string, THREE.Group>>(new Map());
   const animals = useMissionStore((s) => s.animals);
-  useFrame(() => {
-    const list = useMissionStore.getState().animals;
+  const sim = useRef<AnimalState[]>([]);
+  useLayoutEffect(() => {
+    sim.current = animals.map((a) => ({ ...a }));
+  }, [animals]);
+  useFrame((_, dt) => {
+    const s = useMissionStore.getState();
+    const live = s.status === 'running' || s.status === 'waiting_for_gemini';
+    const list = live ? s.animals : stepAnimals(sim.current, s.rover, Math.min(0.05, dt));
+    if (!live) sim.current = list;
     for (const a of list) {
       const g = refs.current.get(a.id);
       if (!g) continue;
@@ -357,30 +427,34 @@ function Animals({ world }: { world: World }) {
             else refs.current.delete(a.id);
           }}
         >
+          <mesh position={[0, 0.06, 0]} rotation={[-Math.PI / 2, 0, 0]} userData={{ thermal: a.kind === 'deer' ? THERMAL_TEMPERATURE.deer : THERMAL_TEMPERATURE.fox }}>
+            <circleGeometry args={[a.kind === 'deer' ? 1.5 : 0.95, 14]} />
+            <meshBasicMaterial color={a.kind === 'deer' ? '#8d5a32' : '#e07040'} />
+          </mesh>
           {a.kind === 'fox' ? (
             <>
-              <mesh position={[0, 0.22, 0]} layers={TRUTH_LAYER} userData={{ thermal: THERMAL_TEMPERATURE.fox }}>
+              <mesh position={[0, 0.22, 0]} userData={{ thermal: THERMAL_TEMPERATURE.fox }}>
                 <boxGeometry args={[0.22, 0.24, 0.6]} />
                 <meshStandardMaterial color="#b4542a" />
               </mesh>
-              <mesh position={[0, 0.34, -0.33]} layers={TRUTH_LAYER} userData={{ thermal: THERMAL_TEMPERATURE.fox }}>
+              <mesh position={[0, 0.34, -0.33]} userData={{ thermal: THERMAL_TEMPERATURE.fox }}>
                 <boxGeometry args={[0.16, 0.16, 0.2]} />
                 <meshStandardMaterial color="#c9683a" />
               </mesh>
             </>
           ) : (
             <>
-              <mesh position={[0, 0.95, 0]} layers={TRUTH_LAYER} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
+              <mesh position={[0, 0.95, 0]} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
                 <boxGeometry args={[0.5, 0.6, 1.3]} />
                 <meshStandardMaterial color="#6b4b32" />
               </mesh>
-              <mesh position={[0, 1.45, -0.75]} layers={TRUTH_LAYER} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
+              <mesh position={[0, 1.45, -0.75]} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
                 <boxGeometry args={[0.22, 0.5, 0.3]} />
                 <meshStandardMaterial color="#75543a" />
               </mesh>
               {[-0.18, 0.18].flatMap((x) =>
                 [-0.45, 0.45].map((z) => (
-                  <mesh key={`${x}${z}`} position={[x, 0.33, z]} layers={TRUTH_LAYER} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
+                  <mesh key={`${x}${z}`} position={[x, 0.33, z]} userData={{ thermal: THERMAL_TEMPERATURE.deer }}>
                     <boxGeometry args={[0.1, 0.66, 0.1]} />
                     <meshStandardMaterial color="#5a3f2a" />
                   </mesh>
@@ -455,25 +529,66 @@ export function TruthLayerToggle() {
   return null;
 }
 
+export interface LightLook {
+  background: string;
+  fog: string;
+  ambient: string;
+  ambientIntensity: number;
+  hemiSky: string;
+  hemiGround: string;
+  hemiIntensity: number;
+  sun: string;
+  sunIntensity: number;
+}
+
+const NIGHT_LOOK = { bg: '#0b1020', fog: '#12182a', ambient: '#9eb0d4', hemiSky: '#3a4f80', hemiGround: '#1a2214', sun: '#b7c6ee', amb: 0.28, hemi: 0.55, sunI: 0.85 };
+const EVENING_LOOK = { bg: '#3a2048', fog: '#6a4038', ambient: '#f0c09a', hemiSky: '#e08a55', hemiGround: '#3a2a18', sun: '#ff9944', amb: 0.62, hemi: 0.85, sunI: 1.65 };
+const DAY_LOOK = { bg: '#8ec5ef', fog: '#c5dff5', ambient: '#fff8ee', hemiSky: '#d5ecff', hemiGround: '#7ea062', sun: '#fff4dd', amb: 1.2, hemi: 1.15, sunI: 2.45 };
+
+function mixHex(a: string, b: string, t: number): string {
+  return '#' + new THREE.Color(a).lerp(new THREE.Color(b), t).getHexString();
+}
+
+/** Sky and fill lights from light_level (night → evening → day) with a moonlight boost at night. */
+export function lightingFor(params: { light_level: number; moonlight: number }): LightLook {
+  const level = Math.min(1, Math.max(0, params.light_level));
+  const t = level <= 0.5 ? level / 0.5 : (level - 0.5) / 0.5;
+  const from = level <= 0.5 ? NIGHT_LOOK : EVENING_LOOK;
+  const to = level <= 0.5 ? EVENING_LOOK : DAY_LOOK;
+  const nightness = 1 - level;
+  const lerp = (a: number, b: number) => a + (b - a) * t;
+  return {
+    background: mixHex(from.bg, to.bg, t),
+    fog: mixHex(from.fog, to.fog, t),
+    ambient: mixHex(from.ambient, to.ambient, t),
+    ambientIntensity: lerp(from.amb, to.amb) + nightness * params.moonlight * 0.25,
+    hemiSky: mixHex(from.hemiSky, to.hemiSky, t),
+    hemiGround: mixHex(from.hemiGround, to.hemiGround, t),
+    hemiIntensity: lerp(from.hemi, to.hemi),
+    sun: mixHex(from.sun, to.sun, t),
+    sunIntensity: lerp(from.sunI, to.sunI) * (1 + nightness * params.moonlight * 0.85),
+  };
+}
+
 /** Background + fog must be direct children of the Canvas (`attach` targets the parent). */
 export function Sky({ world }: { world: World }) {
+  const look = lightingFor(world.params);
   const far = 35 + (1 - world.params.fog_density) * 140;
   return (
     <>
-      <color attach="background" args={['#0b1020']} />
-      <fog attach="fog" args={['#0d1424', 6, far]} />
+      <color attach="background" args={[look.background]} />
+      <fog attach="fog" args={[look.fog, 6, far]} />
     </>
   );
 }
 
 export function Atmosphere({ world }: { world: World }) {
-  const { moonlight } = world.params;
-  const moon = 1.0 + moonlight * 2.0;
+  const look = lightingFor(world.params);
   return (
     <>
-      <ambientLight intensity={0.25 + moonlight * 0.35} color="#8ea2cc" />
-      <hemisphereLight args={['#3a4f80', '#141a12', 0.6 + moonlight * 0.8]} />
-      <directionalLight position={[60, 90, -40]} intensity={moon} color="#a7b9e6" />
+      <ambientLight intensity={look.ambientIntensity} color={look.ambient} />
+      <hemisphereLight args={[look.hemiSky, look.hemiGround, look.hemiIntensity]} />
+      <directionalLight position={[60, 90, -40]} intensity={look.sunIntensity} color={look.sun} />
     </>
   );
 }
@@ -493,6 +608,7 @@ export function WorldMeshes({ world }: { world: World }) {
       <Rocks world={world} />
       <WaterMesh world={world} />
       <Fungi world={world} />
+      <Cars world={world} />
       <BaseMarker world={world} />
       <Rover world={world} />
       <Survivor world={world} />

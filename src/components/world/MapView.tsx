@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { WORLD_HALF_SIZE_M } from '@/lib/constants';
 import type { World } from '@/lib/world/terrain';
 import { useMissionStore } from '@/store/missionStore';
-import { TruthLayerToggle, WorldMeshes } from './Scene';
+import { lightingFor, TruthLayerToggle, WorldMeshes } from './Scene';
 
 const MIN_H = 22;
 const MAX_H = 480;
@@ -21,21 +21,16 @@ function clampHeight(h: number) {
   return Math.min(MAX_H, Math.max(MIN_H, h));
 }
 
-function MapSky() {
+function MapAtmosphere({ world }: { world: World }) {
+  const look = lightingFor(world.params);
+  const far = 240 + (1 - world.params.fog_density) * 380;
   return (
     <>
-      <color attach="background" args={['#c5dff0']} />
-      <fog attach="fog" args={['#d4e8f6', 200, 620]} />
-    </>
-  );
-}
-
-function MapLights() {
-  return (
-    <>
-      <ambientLight intensity={1.35} color="#eef6e8" />
-      <hemisphereLight args={['#d7ecff', '#6f8f55', 1.05]} />
-      <directionalLight position={[40, 160, 24]} intensity={2.05} color="#fff8ee" />
+      <color attach="background" args={[look.background]} />
+      <fog attach="fog" args={[look.fog, 90, far]} />
+      <ambientLight intensity={look.ambientIntensity * 1.15} color={look.ambient} />
+      <hemisphereLight args={[look.hemiSky, look.hemiGround, look.hemiIntensity]} />
+      <directionalLight position={[40, 160, 24]} intensity={look.sunIntensity} color={look.sun} />
     </>
   );
 }
@@ -224,7 +219,6 @@ export default function MapView() {
           gl.toneMappingExposure = 1.2;
         }}
       >
-        <MapLights />
         {world && (
           <group key={worldVersion}>
             <WorldMeshes world={world} />
@@ -233,7 +227,7 @@ export default function MapView() {
             <RobotLabel world={world} labelRef={labelRef} />
           </group>
         )}
-        {world && <MapSky />}
+        {world && <MapAtmosphere world={world} />}
         <TruthLayerToggle />
         <OverheadCamera heightRef={heightRef} />
       </Canvas>

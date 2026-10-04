@@ -11,7 +11,7 @@
 import { LIDAR_COLUMN_KEYS, LIDAR_MAX_M, MAX_MOVE_M } from '../constants';
 import { normDeg } from '../geo';
 import type { Decision, LidarColumnKey, ObservationPacket, TerrainParams } from '../types';
-import { DEFAULT_TERRAIN_PARAMS } from './schema';
+import { DEFAULT_TERRAIN_PARAMS, describeLight } from './schema';
 
 function columnScore(packet: ObservationPacket, key: LidarColumnKey): number {
   const level = packet.lidar.level[key];
@@ -155,9 +155,46 @@ export function mockDecide(packet: ObservationPacket): Decision {
   };
 }
 
-/** Terrain mock: nudge defaults from keywords. */
+function clampCount(n: number, max: number): number {
+  return Math.max(0, Math.min(max, Math.round(n)));
+}
+
+function situationPhrase(s: TerrainParams['survivor_situation']): string {
+  if (s === 'ditch') return 'survivor in a ditch';
+  if (s === 'slope') return 'survivor on a slope';
+  if (s === 'obstacle') return 'survivor against an obstacle';
+  return 'survivor seated by a log';
+}
+
+/** One-line confirmation of fields that moved. Used when Gemini is not called. */
+function confirmTerrain(prev: TerrainParams, out: TerrainParams): string {
+  const bits: string[] = [];
+  if (Math.abs(out.light_level - prev.light_level) > 0.05) bits.push(describeLight(out.light_level));
+  if (out.bumpiness > prev.bumpiness + 0.05) bits.push('bumpier ground');
+  else if (out.bumpiness < prev.bumpiness - 0.05) bits.push('smoother ground');
+  if (out.survivor_situation !== prev.survivor_situation) bits.push(situationPhrase(out.survivor_situation));
+  if (out.car_count > prev.car_count) bits.push(out.car_count === 1 ? 'a car added' : 'cars added');
+  else if (out.car_count < prev.car_count) bits.push('cars removed');
+  const animals = out.fox_count + out.deer_count;
+  const prevAnimals = prev.fox_count + prev.deer_count;
+  if (animals > prevAnimals) bits.push('moving animals added');
+  else if (animals < prevAnimals) bits.push('fewer animals');
+  if (out.fog_density > prev.fog_density + 0.08) bits.push('thicker fog');
+  else if (out.fog_density < prev.fog_density - 0.08) bits.push('clearer air');
+  if (out.tree_density > prev.tree_density + 0.08) bits.push('denser trees');
+  else if (out.tree_density < prev.tree_density - 0.08) bits.push('sparser trees');
+  if (out.slope > prev.slope + 0.08) bits.push('steeper hills');
+  else if (out.slope < prev.slope - 0.08) bits.push('flatter hills');
+  if (out.water !== prev.water) bits.push(out.water === 'none' ? 'no water' : `a ${out.water}`);
+  if (!bits.length) bits.push('terrain unchanged');
+  const line = bits.join(', ');
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+/** Terrain mock: nudge the current params from keywords. Gemini is the real mapper. */
 export function mockTerrain(prompt: string, current: TerrainParams = DEFAULT_TERRAIN_PARAMS): TerrainParams {
   const p = prompt.toLowerCase();
+  const prev: TerrainParams = { ...current };
   const out: TerrainParams = { ...current };
   const bump = (k: keyof TerrainParams, d: number) => {
     const v = out[k];
@@ -170,21 +207,52 @@ export function mockTerrain(prompt: string, current: TerrainParams = DEFAULT_TER
   if (/dry|no water/.test(p)) out.water = 'none';
   if (/heavy fog|thick fog|foggy/.test(p)) bump('fog_density', 0.3);
   else if (/light fog|thin fog/.test(p)) out.fog_density = 0.3;
-  else if (/fog|mist/.test(p)) bump('fog_density', 0.2);
-  if (/clear sky|no fog/.test(p)) out.fog_density = 0.05;
+  else if (/fog|mist|visibility/.test(p)) bump('fog_density', 0.2);
+  if (/clear sky|no fog|clear air/.test(p)) out.fog_density = 0.05;
+  if (/evening|dusk|sunset|twilight/.test(p)) {
+    out.light_level = 0.42;
+    out.moonlight = 0.35;
+  } else if (/night|midnight|after dark|moonlit/.test(p)) {
+    out.light_level = 0.08;
+    out.moonlight = 0.7;
+  } else if (/dawn|sunrise/.test(p)) {
+    out.light_level = 0.3;
+    out.moonlight = 0.25;
+  } else if (/daytime|day time|\bday\b|noon|midday|sunny|sunlight|morning|afternoon/.test(p)) {
+    out.light_level = 0.95;
+    out.moonlight = 0.12;
+  }
   if (/bright|full moon/.test(p)) bump('moonlight', 0.3);
-  if (/dark|new moon|overcast/.test(p)) bump('moonlight', -0.3);
-  if (/steep|hill|slope|ridge/.test(p)) bump('slope', 0.3);
-  if (/flat/.test(p)) out.slope = 0.05;
+  if (/new moon/.test(p)) bump('moonlight', -0.3);
+  if (/smooth|even ground|less bump/.test(p)) out.bumpiness = 0.05;
+  else if (/bump|rough|uneven|rugged|rutted|rocky/.test(p)) out.bumpiness = Math.min(1, Math.max(0.75, out.bumpiness + 0.45));
+  if (/steep|hill|ridge/.test(p) && !/survivor|hiker|person|stuck/.test(p)) bump('slope', 0.3);
+  if (/flat/.test(p)) {
+    out.slope = 0.05;
+    out.bumpiness = Math.min(out.bumpiness, 0.08);
+  }
   if (/logs?|deadfall|windfall/.test(p)) bump('fallen_logs', 0.3);
   if (/branch|maze|forks?|many trails/.test(p)) bump('branchiness', 0.3);
+  if (/\bno cars\b|without cars|remove cars/.test(p)) out.car_count = 0;
+  else if (/\bcars?\b|vehicles?|trucks?|automobiles?/.test(p)) out.car_count = clampCount(Math.max(2, out.car_count + 2), 4);
+  if (/\bno animals\b|without animals|no wildlife/.test(p)) {
+    out.fox_count = 0;
+    out.deer_count = 0;
+  } else if (/moving animals|animals|wildlife|creatures/.test(p)) {
+    out.fox_count = clampCount(Math.max(2, out.fox_count), 4);
+    out.deer_count = clampCount(Math.max(2, out.deer_count), 4);
+  }
   const foxM = p.match(/(\d|no|two|one)\s+fox/);
-  if (foxM) out.fox_count = foxM[1] === 'no' ? 0 : foxM[1] === 'two' ? 2 : foxM[1] === 'one' ? 1 : Math.min(2, Number(foxM[1]));
+  if (foxM) out.fox_count = foxM[1] === 'no' ? 0 : foxM[1] === 'two' ? 2 : foxM[1] === 'one' ? 1 : clampCount(Number(foxM[1]), 4);
   const deerM = p.match(/(\d|no|two|one)\s+deer/);
-  if (deerM) out.deer_count = deerM[1] === 'no' ? 0 : deerM[1] === 'two' ? 2 : deerM[1] === 'one' ? 1 : Math.min(2, Number(deerM[1]));
+  if (deerM) out.deer_count = deerM[1] === 'no' ? 0 : deerM[1] === 'two' ? 2 : deerM[1] === 'one' ? 1 : clampCount(Number(deerM[1]), 4);
+  if (/ditch|gully|ravine|trench/.test(p)) out.survivor_situation = 'ditch';
+  else if (/obstacle|pinned|wedged|against a (rock|log|boulder)/.test(p)) out.survivor_situation = 'obstacle';
+  else if (/on a slope|steep bank|hillside/.test(p)) out.survivor_situation = 'slope';
+  else if (/seated|sitting|against a log/.test(p)) out.survivor_situation = 'seated';
   if (/fung|mushroom|glow/.test(p)) out.fungi_patches = Math.min(3, out.fungi_patches + 1);
   const seedM = p.match(/seed\s*(\d+)/);
   if (seedM) out.seed = Number(seedM[1]);
-  out.narration = `Mock terrain: ${prompt.trim() || 'defaults'} → trees ${out.tree_density.toFixed(1)}, ${out.water}, fog ${out.fog_density.toFixed(1)}, ${out.fox_count} fox, ${out.deer_count} deer, ${out.fungi_patches} fungi.`;
+  out.narration = confirmTerrain(prev, out);
   return out;
 }
