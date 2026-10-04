@@ -1,0 +1,106 @@
+'use client';
+/**
+ * Thought transcript: real decision / narration / result lines from the mission feed,
+ * newest at the bottom. While a run is active and nothing new has arrived, a short
+ * status line is derived from the live sim (phase, distance, last result) on a
+ * 5–15s cadence. Paused runs and a quiet mock decider do not get filler text.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FeedEntry } from '@/lib/types';
+import { useMissionStore, type MissionState } from '@/store/missionStore';
+
+type Line = { id: string; t: number; kind: string; text: string };
+
+function feedText(e: FeedEntry): string {
+  if (e.kind === 'decision' && e.decision?.brief_reason) return e.decision.brief_reason;
+  if (e.kind === 'thought' && e.thought) return e.thought;
+  return e.text;
+}
+
+function derivedStatus(s: MissionState): string {
+  const r = s.rover;
+  const result = s.lastResult.trim();
+  if (/^(MOVED|BLOCKED|TURNED|GOTO_NODE|RETURN_TO_BASE|MARK_)/i.test(result)) return result;
+  if (s.status === 'waiting_for_gemini') return `${r.phase} · waiting at step ${r.step}`;
+  return `${r.phase} · step ${r.step} · ${s.distanceTraveledM.toFixed(0)} m traveled`;
+}
+
+const TONE: Record<string, string> = {
+  decision: 'text-slate-900',
+  thought: 'italic text-slate-800',
+  result: 'text-slate-700',
+  system: 'text-[12px] text-slate-500',
+  error: 'text-rose-700',
+  status: 'text-slate-600',
+};
+
+export default function ThoughtPanel() {
+  const feed = useMissionStore((s) => s.feed);
+  const status = useMissionStore((s) => s.status);
+  const error = useMissionStore((s) => s.error);
+  const [derived, setDerived] = useState<Line[]>([]);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  const prevFeedLen = useRef(feed.length);
+  useEffect(() => {
+    // Reset/regenerate replaces the log with a shorter feed. Drop derived lines too,
+    // even when both store writes land in one render and length never passes through 0.
+    if (feed.length < prevFeedLen.current) setDerived([]);
+    prevFeedLen.current = feed.length;
+  }, [feed.length]);
+
+  useEffect(() => {
+    const active = status === 'running' || status === 'waiting_for_gemini';
+    if (!active) return;
+    let timer = 0;
+    let cancelled = false;
+    const arm = () => {
+      const at = useMissionStore.getState().feed.length;
+      const delay = 5000 + Math.random() * 10000;
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        const s = useMissionStore.getState();
+        const still = s.status === 'running' || s.status === 'waiting_for_gemini';
+        if (still && s.feed.length === at) {
+          const text = derivedStatus(s);
+          setDerived((d) => (d[d.length - 1]?.text === text ? d : [...d.slice(-29), { id: `s-${Date.now()}`, t: Date.now(), kind: 'status', text }]));
+        }
+        arm();
+      }, delay);
+    };
+    arm();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [status]);
+
+  const lines = useMemo<Line[]>(() => {
+    const fromFeed = feed.map((e) => ({ id: `f${e.id}`, t: e.t, kind: e.kind, text: feedText(e) }));
+    return [...fromFeed, ...derived].sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
+  }, [feed, derived]);
+
+  const tail = lines[lines.length - 1]?.id;
+  useEffect(() => {
+    const el = scroller.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [tail]);
+
+  const waiting = status === 'waiting_for_gemini';
+
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]" aria-label="Robot's thought process">
+      <h2 className="shrink-0 px-3 pb-1 pt-2 text-center text-sm font-medium text-slate-800">Robot&apos;s thought process</h2>
+      {error && <p className="shrink-0 px-3 pb-1 text-xs text-rose-700">{error}</p>}
+      <div ref={scroller} role="log" aria-label="Thought transcript" className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+        {lines.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Thoughts will show up here during a run.</p>}
+        {lines.map((line) => (
+          <p key={line.id} className={`border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
+            {line.text}
+          </p>
+        ))}
+      </div>
+      {waiting && <p className="shrink-0 px-3 pb-2 text-[11px] text-slate-600">Waiting for the next decision…</p>}
+    </section>
+  );
+}

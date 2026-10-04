@@ -1,9 +1,20 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090b;
-  --foreground: #e4e4e7;
-  color-scheme: dark;
+  --background: #d7e4f0;
+  --foreground: #1e293b;
+  color-scheme: light;
+}
+
+/* POV night-for-night grade: lift the render, then tint hue toward blue.
+   Applied only to the photo canvas so thermal false-color stays intact. */
+.pov-photo canvas {
+  filter: contrast(1.06) saturate(0.78) brightness(1.12);
+}
+.pov-wash {
+  background: #1d4e96;
+  mix-blend-mode: color;
+  opacity: 0.48;
 }
 
 @theme inline {
