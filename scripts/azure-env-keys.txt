@@ -1,0 +1,4 @@
+# Keys synced from .env.production to Azure app settings, one per line.
+# Do not add DECIDER or NEXT_PUBLIC_DEV_CONSOLE for a public deploy.
+GEMINI_API_KEY
+GEMINI_MODEL

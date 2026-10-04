@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:azure": "node scripts/build-azure.mjs",
+    "sync:env": "node scripts/sync-env.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",

@@ -1,10 +1,6 @@
 {
-  "appService.zipIgnorePattern": [
-    "node_modules{,/**}",
-    ".next{,/**}",
-    ".env*",
-    "tiger-cloud-credentials.txt"
-],
-"appService.defaultWebAppToDeploy": "/subscriptions/524d4e58-eb75-474c-8719-4562dc5e8ae4/resourceGroups/girlhacks2026/providers/Microsoft.Web/sites/girlhacksbackend",
-"appService.deploySubpath": "."
+  "appService.zipIgnorePattern": ["tiger-cloud-credentials.txt"],
+  "appService.defaultWebAppToDeploy": "/subscriptions/524d4e58-eb75-474c-8719-4562dc5e8ae4/resourceGroups/girlhacks2026/providers/Microsoft.Web/sites/girlhacksbackend",
+  "appService.deploySubpath": ".next/standalone",
+  "appService.preDeployTask": "predeploy-azure"
 }
