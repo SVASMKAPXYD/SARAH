@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "node --experimental-strip-types --test",
     "build:azure": "node scripts/build-azure.mjs",
-    "sync:env": "node scripts/sync-env.mjs"
+    "sync:env": "node scripts/sync-env.mjs",
+    "deploy:azure": "bash scripts/deploy-azure.sh"
   },
   "dependencies": {
     "@google/genai": "^2.27.0",
