@@ -151,7 +151,7 @@ function PathHistory({ world }: { world: World }) {
 }
 
 function RobotBeacon({ world }: { world: World }) {
-  const ref = useRef<THREE.Mesh>(null);
+  const ref = useRef<THREE.Group>(null);
   useFrame(() => {
     const r = useMissionStore.getState().rover;
     const m = ref.current;
@@ -159,31 +159,34 @@ function RobotBeacon({ world }: { world: World }) {
     m.position.set(r.x, world.heightAt(r.x, r.z) + 0.5, r.z);
   });
   return (
-    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} renderOrder={4}>
-      <ringGeometry args={[0.85, 1.25, 24]} />
-      <meshBasicMaterial color="#f8fafc" depthTest={false} toneMapped={false} transparent opacity={0.95} side={THREE.DoubleSide} />
-    </mesh>
+    <group ref={ref} rotation={[-Math.PI / 2, 0, 0]} renderOrder={4}>
+      <mesh>
+        <circleGeometry args={[0.8, 24]} />
+        <meshBasicMaterial color="#f8fafc" depthTest={false} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0, 0.01]}>
+        <ringGeometry args={[1.0, 1.35, 24]} />
+        <meshBasicMaterial color="#0f172a" depthTest={false} toneMapped={false} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
   );
 }
 
-function RobotLabel({ world, labelRef }: { world: World; labelRef: RefObject<HTMLDivElement | null> }) {
-  const v = useRef(new THREE.Vector3());
-  useFrame(({ camera, size }) => {
-    const el = labelRef.current;
-    if (!el) return;
-    const r = useMissionStore.getState().rover;
-    v.current.set(r.x, world.heightAt(r.x, r.z) + 1.2, r.z);
-    v.current.project(camera);
-    if (v.current.z > 1) {
-      el.style.opacity = '0';
-      return;
-    }
-    const x = Math.min(size.width - 24, Math.max(24, (v.current.x * 0.5 + 0.5) * size.width));
-    const y = Math.min(size.height - 14, Math.max(14, (-v.current.y * 0.5 + 0.5) * size.height));
-    el.style.opacity = '1';
-    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-  });
-  return null;
+function SurvivorBeacon({ world }: { world: World }) {
+  const { x, z } = world.truth.survivor;
+  const y = world.heightAt(x, z) + 0.45;
+  return (
+    <group position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={5}>
+      <mesh>
+        <circleGeometry args={[1.35, 24]} />
+        <meshBasicMaterial color="#0f172a" depthTest={false} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0, 0.01]}>
+        <circleGeometry args={[0.95, 24]} />
+        <meshBasicMaterial color="#ef4444" depthTest={false} toneMapped={false} />
+      </mesh>
+    </group>
+  );
 }
 
 function ZoomButton({ label, onClick, children }: { label: string; onClick: () => void; children: string }) {
@@ -203,7 +206,6 @@ function ZoomButton({ label, onClick, children }: { label: string; onClick: () =
 export default function MapView() {
   const world = useMissionStore((s) => s.world);
   const worldVersion = useMissionStore((s) => s.worldVersion);
-  const labelRef = useRef<HTMLDivElement>(null);
   const heightRef = useRef(190);
   const zoomBy = (factor: number) => {
     heightRef.current = clampHeight((heightRef.current ?? 190) * factor);
@@ -224,7 +226,7 @@ export default function MapView() {
             <WorldMeshes world={world} />
             <PathHistory world={world} />
             <RobotBeacon world={world} />
-            <RobotLabel world={world} labelRef={labelRef} />
+            <SurvivorBeacon world={world} />
           </group>
         )}
         {world && <MapAtmosphere world={world} />}
@@ -239,12 +241,9 @@ export default function MapView() {
           −
         </ZoomButton>
       </div>
-      <div
-        ref={labelRef}
-        className="pointer-events-none absolute left-0 top-0 z-[5] whitespace-nowrap rounded border border-slate-500/80 bg-[#e7eef6]/95 px-1.5 py-0.5 text-[11px] font-medium text-slate-800 shadow-sm"
-        style={{ opacity: 0 }}
-      >
-        robot
+      <div className="pointer-events-none absolute left-2 top-2 z-10 flex gap-2 rounded border border-slate-500/70 bg-white/90 px-2 py-1 text-[11px] text-slate-800 shadow-sm">
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500" />hiker</span>
+        <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-slate-50 ring-1 ring-slate-700" />robot</span>
       </div>
       {!world && <div className="absolute inset-0 grid place-items-center text-sm text-slate-600">Generating world…</div>}
     </div>

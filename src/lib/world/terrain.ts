@@ -176,10 +176,26 @@ export function generateWorld(params: TerrainParams, seed: number): World {
     }
   }
   if (!survivor) {
-    const end = main[main.length - 1];
-    const off = dirFromBearing(mainHeading + 90);
-    survivor = { x: end.x + off.x * 8, z: end.z + off.z * 8 };
+    let farthestFromTrail: Vec2 | null = null;
+    let farthestTrailDistance = -Infinity;
+    for (let x = -half + 8; x <= half - 8; x += 4) {
+      for (let z = -half + 8; z <= half - 8; z += 4) {
+        const candidate = { x, z };
+        if (!inBounds(candidate, 6) || distance(candidate, base) < SURVIVOR_MIN_DIST_FROM_BASE_M) continue;
+        const trailDistance = distToTrails(candidate, trails);
+        if (trailDistance > farthestTrailDistance) {
+          farthestFromTrail = candidate;
+          farthestTrailDistance = trailDistance;
+        }
+        if (trailDistance >= 5 && trailDistance > bestScore) {
+          bestScore = trailDistance;
+          survivor = candidate;
+        }
+      }
+    }
+    survivor ??= farthestFromTrail;
   }
+  if (!survivor) throw new Error('Could not place survivor inside the playable world.');
   const survivorHeading = normDeg(rnd() * 360);
   const situation = params.survivor_situation;
 

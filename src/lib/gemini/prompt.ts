@@ -41,7 +41,7 @@ Qualitative mappings:
 - evening, dusk, sunset, twilight → light_level about 0.42
 - night, midnight, moonlit → light_level about 0.08 and moonlight higher
 - dawn → light_level about 0.30
-- bumpy, rough, uneven, rutted → bumpiness high (0.7–1). smooth or flat → bumpiness near 0. slope is large hills, not bumpiness
+- slope and bumpiness are fixed at 0; do not change or claim to change them. If asked, say they are currently fixed at zero.
 - fog, mist, poor visibility → fog_density. clear sky → fog_density near 0
 - denser trees or pines → tree_density. open or sparse → lower tree_density
 - add cars or vehicles → car_count at least 2 (max 4). no cars → 0

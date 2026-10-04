@@ -61,7 +61,7 @@ const TABS: { id: ThoughtTab; label: string }[] = [
   { id: 'graph', label: 'Place graph' },
 ];
 
-export default function ThoughtPanel() {
+export default function ThoughtPanel({ hud = false }: { hud?: boolean }) {
   const feed = useMissionStore((s) => s.feed);
   const status = useMissionStore((s) => s.status);
   const error = useMissionStore((s) => s.error);
@@ -146,9 +146,14 @@ export default function ThoughtPanel() {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]" aria-label="Robot's thought process">
-      <h2 className="shrink-0 truncate px-2 pt-1.5 text-center text-xs font-medium text-slate-800">Robot&apos;s thought process</h2>
-      <div role="tablist" aria-label="Thought process views" className="flex shrink-0 justify-center gap-1 px-2 pb-1 pt-1" onKeyDown={onTabKey}>
+    <section
+      className={`flex h-full min-h-0 flex-col overflow-hidden ${hud ? 'text-cyan-50' : 'rounded-md border border-[#8ea3b8] bg-[#d5e6f7]'}`}
+      aria-label="Robot's thought process"
+    >
+      <h2 className={`shrink-0 truncate px-3 pt-2 text-left text-xs font-semibold uppercase tracking-[0.18em] ${hud ? 'text-cyan-100 drop-shadow-[0_0_8px_rgba(34,211,238,0.7)]' : 'text-slate-800'}`}>
+        Decision trace
+      </h2>
+      <div role="tablist" aria-label="Thought process views" className="flex shrink-0 gap-1 px-2 pb-1 pt-2" onKeyDown={onTabKey}>
         {TABS.map((t) => {
           const selected = tab === t.id;
           return (
@@ -161,14 +166,20 @@ export default function ThoughtPanel() {
               aria-controls={`thought-panel-${t.id}`}
               tabIndex={selected ? 0 : -1}
               onClick={() => setTab(t.id)}
-              className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-medium ${selected ? 'bg-slate-800 text-white' : 'bg-white/80 text-slate-700 hover:bg-white'}`}
+              className={`whitespace-nowrap rounded px-2 py-1 text-[11px] font-medium ${hud
+                ? selected
+                  ? 'text-cyan-50 underline decoration-cyan-300 underline-offset-4 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]'
+                  : 'text-cyan-100/65 hover:text-cyan-50'
+                : selected
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-white/80 text-slate-700 hover:bg-white'}`}
             >
               {t.label}
             </button>
           );
         })}
       </div>
-      {error && <p className="shrink-0 px-3 pb-1 text-xs text-rose-700">{error}</p>}
+      {error && <p className={`shrink-0 px-3 pb-1 text-xs ${hud ? 'text-rose-300 drop-shadow-[0_0_6px_rgba(251,113,133,0.45)]' : 'text-rose-700'}`}>{error}</p>}
       <div className="relative min-h-0 flex-1">
         <div
           id="thought-panel-transcript"
@@ -179,19 +190,23 @@ export default function ThoughtPanel() {
           className="absolute inset-0 overflow-y-auto px-3 pb-2"
         >
           <div ref={content} role="log" aria-label="Thought transcript">
-            {lines.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Thoughts will show up here during a run.</p>}
+            {lines.length === 0 && <p className={`py-6 text-center text-sm ${hud ? 'text-cyan-100/55' : 'text-slate-500'}`}>Thoughts will show up here during a run.</p>}
             {lines.map((line) => (
-              <p key={line.id} className={`whitespace-pre-line border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
+              <p key={line.id} className={`whitespace-pre-line border-t py-2 text-[13px] leading-snug first:border-t-0 ${hud
+                ? 'border-cyan-100/10 drop-shadow-[0_0_7px_rgba(103,232,249,0.28)]'
+                : 'border-slate-400/25'} ${hud
+                  ? line.kind === 'error' ? 'text-rose-300' : line.kind === 'system' ? 'text-cyan-100/60' : line.kind === 'thought' ? 'italic text-cyan-100/90' : line.kind === 'result' ? 'text-emerald-200' : 'text-cyan-50'
+                  : TONE[line.kind] ?? 'text-slate-800'}`}>
                 {line.text}
               </p>
             ))}
           </div>
         </div>
         <div id="thought-panel-graph" role="tabpanel" aria-labelledby="thought-tab-graph" hidden={tab !== 'graph'} className="absolute inset-0">
-          <PlaceGraph />
+          <PlaceGraph hud={hud} />
         </div>
       </div>
-      {waiting && <p className="shrink-0 px-3 pb-2 text-[11px] text-slate-600">Waiting for the next decision…</p>}
+      {waiting && <p className={`shrink-0 px-3 pb-2 text-[11px] ${hud ? 'text-amber-200 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-slate-600'}`}>Waiting for the next decision…</p>}
     </section>
   );
 }

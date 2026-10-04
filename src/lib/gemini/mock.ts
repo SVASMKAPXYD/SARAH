@@ -136,8 +136,6 @@ function situationPhrase(s: TerrainParams['survivor_situation']): string {
 function confirmTerrain(prev: TerrainParams, out: TerrainParams): string {
   const bits: string[] = [];
   if (Math.abs(out.light_level - prev.light_level) > 0.05) bits.push(describeLight(out.light_level));
-  if (out.bumpiness > prev.bumpiness + 0.05) bits.push('bumpier ground');
-  else if (out.bumpiness < prev.bumpiness - 0.05) bits.push('smoother ground');
   if (out.survivor_situation !== prev.survivor_situation) bits.push(situationPhrase(out.survivor_situation));
   if (out.car_count > prev.car_count) bits.push(out.car_count === 1 ? 'a car added' : 'cars added');
   else if (out.car_count < prev.car_count) bits.push('cars removed');
@@ -149,15 +147,13 @@ function confirmTerrain(prev: TerrainParams, out: TerrainParams): string {
   else if (out.fog_density < prev.fog_density - 0.08) bits.push('clearer air');
   if (out.tree_density > prev.tree_density + 0.08) bits.push('denser trees');
   else if (out.tree_density < prev.tree_density - 0.08) bits.push('sparser trees');
-  if (out.slope > prev.slope + 0.08) bits.push('steeper hills');
-  else if (out.slope < prev.slope - 0.08) bits.push('flatter hills');
   if (out.water !== prev.water) bits.push(out.water === 'none' ? 'no water' : `a ${out.water}`);
   if (!bits.length) bits.push('terrain unchanged');
   const line = bits.join(', ');
   return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
-/** Terrain mock: nudge the current params from keywords. Gemini is the real mapper. */
+/** Terrain mock: nudge supported params from keywords. Gemini is the real mapper. */
 export function mockTerrain(prompt: string, current: TerrainParams = DEFAULT_TERRAIN_PARAMS): TerrainParams {
   const p = prompt.toLowerCase();
   const prev: TerrainParams = { ...current };
@@ -190,13 +186,6 @@ export function mockTerrain(prompt: string, current: TerrainParams = DEFAULT_TER
   }
   if (/bright|full moon/.test(p)) bump('moonlight', 0.3);
   if (/new moon/.test(p)) bump('moonlight', -0.3);
-  if (/smooth|even ground|less bump/.test(p)) out.bumpiness = 0.05;
-  else if (/bump|rough|uneven|rugged|rutted|rocky/.test(p)) out.bumpiness = Math.min(1, Math.max(0.75, out.bumpiness + 0.45));
-  if (/steep|hill|ridge/.test(p) && !/survivor|hiker|person|stuck/.test(p)) bump('slope', 0.3);
-  if (/flat/.test(p)) {
-    out.slope = 0.05;
-    out.bumpiness = Math.min(out.bumpiness, 0.08);
-  }
   if (/logs?|deadfall|windfall/.test(p)) bump('fallen_logs', 0.3);
   if (/branch|maze|forks?|many trails/.test(p)) bump('branchiness', 0.3);
   if (/\bno cars\b|without cars|remove cars/.test(p)) out.car_count = 0;

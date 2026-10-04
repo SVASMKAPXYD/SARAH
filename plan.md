@@ -41,7 +41,11 @@ Advance only for a model-unavailable response (404) or temporary model service u
 
 ## Operator trace
 
-Show the model's returned observations, evidence/assessment, graph update, declared intent, action, and brief reason, followed by the exact simulator result. Show the selected model, latency, and tokens. Display the API's optional thinking summary only when it returns one. Gemini does **not** expose guaranteed raw chain-of-thought; never fabricate or promise it.
+Show the model's returned observations, evidence/assessment, graph update, declared intent, action, and brief reason, followed by the exact simulator result. Show the selected model, latency, and tokens. Display the API's optional thinking summary only when it returns one. Gemini does **not** expose guaranteed raw chain-of-thought; never fabricate or promise it. Default to an immersive third-person rover view, with single-button icon toggles for first/third person and light/thermal, a small resizable square overhead minimap, and glowing thoughts/place-graph text over a transparent HUD. A layout toggle returns to the classic split view (large map, thought panel below it, large POV view).
+
+## Terrain generation and operator map
+
+`/api/terrain` maps operator text to procedural `TerrainParams` through Gemini's structured output; the Terrain panel applies the returned parameters and regenerates the seeded world. `slope` and `bumpiness` are currently fixed at zero in defaults, schema normalization, model instructions, and generation state. The overhead map shows the ground-truth hiker as a red dot and rover as a white dot for operator orientation only; truth markers are not included in the rover's sensor frames or Gemini packet.
 
 ## Current implementation map
 
@@ -57,9 +61,9 @@ Show the model's returned observations, evidence/assessment, graph update, decla
 
 ## Status and proof still needed
 
-Implemented: seeded world and sensor simulation; graph storage/IDs/edge traces; Gemini structured client and mock; model-specific fallback; free MOVE + mark actions; no local route planning or mark gates; replay; thought/decision display, model/latency/token metrics; hidden-truth grading.
+Implemented: seeded world and sensor simulation; graph storage/IDs/edge traces; Gemini structured client and mock; model-specific fallback; free MOVE + mark actions; no local route planning or mark gates; replay; thought/decision display, model/latency/token metrics; hidden-truth grading; Gemini-directed terrain generation; operator-only hiker/rover map markers. Hiker placement has a bounded-grid fallback when random placement fails.
 
-Not yet proven: a real Gemini Interactions request using the preferred model IDs; whether each preference is enabled for the configured Google project/free tier; one fixed-seed full search→mark→Gemini-directed return; behavior across decoys/seeds. The optional API thinking summary may be absent. Focused Node tests cover model-failure classification; no live integration test exists.
+One live terrain request returned structured parameters from `gemini-3.5-flash-lite` in 1.0 s. Not yet proven: a fixed-seed full search→mark→Gemini-directed return; terrain generation across decoys/seeds; availability/free-tier status of each preference. The optional API thinking summary may be absent.
 
 Known simulator limits are experiments, not Gemini policies: LiDAR/collision use a 2D ray approximation; heightmap steep slopes and animal/world interactions are simplified; graph size/frontier duplication are unbounded. Do not add local heuristics to mask these limitations.
 

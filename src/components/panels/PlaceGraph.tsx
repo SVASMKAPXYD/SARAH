@@ -23,7 +23,7 @@ const FRONTIER_STROKE: Record<Frontier['status'], string> = {
   BLOCKED: '#be123c',
 };
 
-export default function PlaceGraph() {
+export default function PlaceGraph({ hud = false }: { hud?: boolean }) {
   const map = useMissionStore((s) => s.map);
   const frame = useRef<HTMLDivElement>(null);
   const [px, setPx] = useState({ w: 280, h: 200 });
@@ -78,7 +78,7 @@ export default function PlaceGraph() {
 
   if (!layout) {
     return (
-      <p className="grid h-full place-items-center px-4 text-center text-sm text-slate-500">
+      <p className={`grid h-full place-items-center px-4 text-center text-sm ${hud ? 'text-cyan-100/55' : 'text-slate-500'}`}>
         The place graph is empty. Nodes, frontiers, and driven edges show up here as the rover maps.
       </p>
     );
@@ -87,10 +87,14 @@ export default function PlaceGraph() {
   const { u, view, tips } = layout;
   const fs = 12 * u;
   const r = 8 * u;
+  const edgeStroke = hud ? '#67e8f9' : '#1e293b';
+  const labelFill = hud ? '#ecfeff' : '#0f172a';
+  const labelStroke = hud ? '#082f49' : '#eef6fc';
+  const muted = hud ? 'text-cyan-100/65' : 'text-slate-600';
 
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-      <p className="truncate px-2 text-center font-mono text-[10px] leading-4 text-slate-600" title={summary}>
+      <p className={`truncate px-2 text-center font-mono text-[10px] leading-4 ${muted}`} title={summary}>
         {summary}
       </p>
       <div className="relative min-h-0">
@@ -101,7 +105,7 @@ export default function PlaceGraph() {
           viewBox={`${view.x} ${view.z} ${view.w} ${view.h}`}
           role="img"
           aria-label={`Place graph, ${map.nodes.length} nodes, ${map.edges.length} driven edges, ${map.frontiers.length} frontiers`}
-          className="block h-full w-full"
+          className={`block h-full w-full ${hud ? 'drop-shadow-[0_0_5px_rgba(34,211,238,0.45)]' : ''}`}
         >
           {map.edges.map((e) => {
             const points =
@@ -114,7 +118,7 @@ export default function PlaceGraph() {
                 key={e.id}
                 points={points.map((p) => `${p.x},${p.z}`).join(' ')}
                 fill="none"
-                stroke={e.safe ? '#1e293b' : '#9f1239'}
+                stroke={e.safe ? edgeStroke : hud ? '#fb7185' : '#9f1239'}
                 strokeWidth={2.25 * u}
                 strokeLinejoin="round"
                 strokeLinecap="round"
@@ -127,7 +131,9 @@ export default function PlaceGraph() {
           })}
 
           {tips.map((f) => {
-            const color = FRONTIER_STROKE[f.status];
+            const color = hud
+              ? f.status === 'UNEXPLORED' ? '#fbbf24' : f.status === 'TRAVERSED' ? '#67e8f9' : '#fb7185'
+              : FRONTIER_STROKE[f.status];
             const ah = 4.2 * u;
             const left = dirFromBearing(f.bearingDeg + 152);
             const right = dirFromBearing(f.bearingDeg - 152);
@@ -153,7 +159,7 @@ export default function PlaceGraph() {
                   dominantBaseline="middle"
                   fontSize={fs * 0.85}
                   fill={color}
-                  stroke="#eef6fc"
+                  stroke={labelStroke}
                   strokeWidth={fs * 0.28}
                   style={{ paintOrder: 'stroke' }}
                 >
@@ -179,8 +185,8 @@ export default function PlaceGraph() {
                 textAnchor="middle"
                 fontSize={fs}
                 fontWeight={600}
-                fill="#0f172a"
-                stroke="#eef6fc"
+                fill={labelFill}
+                stroke={labelStroke}
                 strokeWidth={fs * 0.28}
                 style={{ paintOrder: 'stroke' }}
               >
@@ -191,7 +197,7 @@ export default function PlaceGraph() {
         </svg>
         </div>
       </div>
-      <div className="flex items-center justify-center gap-2 whitespace-nowrap px-1 pb-1 text-[10px] leading-4 text-slate-600">
+      <div className={`flex items-center justify-center gap-2 whitespace-nowrap px-1 pb-1 text-[10px] leading-4 ${muted}`}>
         <span className="inline-flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-[#c2410c]" />
           node
@@ -201,7 +207,7 @@ export default function PlaceGraph() {
           frontier
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="inline-block h-0.5 w-3 bg-slate-800" />
+          <span className={`inline-block h-0.5 w-3 ${hud ? 'bg-cyan-300' : 'bg-slate-800'}`} />
           driven edge
         </span>
       </div>

@@ -16,9 +16,7 @@ type Tab = 'chat' | 'advanced';
 
 const SLIDERS: { key: keyof TerrainParams; label: string; min: number; max: number; step: number }[] = [
   { key: 'light_level', label: 'light level', min: 0, max: 1, step: 0.05 },
-  { key: 'bumpiness', label: 'bumpiness', min: 0, max: 1, step: 0.05 },
   { key: 'tree_density', label: 'tree density', min: 0, max: 1, step: 0.05 },
-  { key: 'slope', label: 'slope', min: 0, max: 1, step: 0.05 },
   { key: 'fallen_logs', label: 'fallen logs', min: 0, max: 1, step: 0.05 },
   { key: 'fog_density', label: 'fog', min: 0, max: 1, step: 0.05 },
   { key: 'moonlight', label: 'moonlight', min: 0, max: 1, step: 0.05 },
@@ -86,7 +84,7 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
               {source && <span className="ml-1 text-zinc-500">({source})</span>}
             </p>
             <p className="font-mono text-[10px] leading-relaxed text-zinc-400">
-              Light {params.light_level.toFixed(2)} ({describeLight(params.light_level)}) · bump {params.bumpiness.toFixed(2)} · cars {params.car_count} · animals {params.fox_count} fox / {params.deer_count} deer · survivor {params.survivor_situation}
+              Light {params.light_level.toFixed(2)} ({describeLight(params.light_level)}) · slope 0 · bump 0 · cars {params.car_count} · animals {params.fox_count} fox / {params.deer_count} deer · survivor {params.survivor_situation}
               {params.fog_density >= 0.65 ? ' · thick fog' : ''}
             </p>
             <form
@@ -99,7 +97,7 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
               <input
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="evening, bumpier ground, survivor in a ditch, add cars and animals…"
+                placeholder="evening, clearer sky, survivor in a ditch, add cars and animals…"
                 disabled={busy || running}
                 className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600"
               />
@@ -112,6 +110,7 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
           </>
         ) : (
           <>
+            <p className="text-[11px] text-zinc-500">Slope and bumpiness are fixed at 0 for now.</p>
             <div className="grid grid-cols-1 gap-1.5">
               {SLIDERS.map((s) => (
                 <label key={s.key} className="grid grid-cols-[92px_1fr_36px] items-center gap-2 text-zinc-400">

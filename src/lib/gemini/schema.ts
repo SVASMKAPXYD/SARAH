@@ -168,6 +168,7 @@ export const DecisionJsonSchema = {
 function unit() {
   return z.preprocess((v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : v), z.number().min(0).max(1));
 }
+const fixedZero = z.preprocess(() => 0, z.literal(0));
 function count(max: number) {
   return z.preprocess(
     (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(v))) : v),
@@ -180,7 +181,7 @@ export type SurvivorSituation = z.infer<typeof SurvivorSituationSchema>;
 
 export const TerrainParamsSchema = z.object({
   tree_density: unit(),
-  slope: unit(),
+  slope: fixedZero,
   fallen_logs: unit(),
   water: z.enum(['none', 'creek', 'pond']),
   fog_density: unit(),
@@ -188,7 +189,7 @@ export const TerrainParamsSchema = z.object({
   /** 0 night, ~0.45 evening, 1 day. Intermediate values are dawn, dusk, overcast. */
   light_level: unit(),
   /** High-frequency ground roughness. Independent of `slope` (large hills). */
-  bumpiness: unit(),
+  bumpiness: fixedZero,
   fox_count: count(4),
   deer_count: count(4),
   /** Cars driving the trails. */
@@ -204,13 +205,13 @@ export type TerrainParams = z.infer<typeof TerrainParamsSchema>;
 
 export const DEFAULT_TERRAIN_PARAMS: TerrainParams = {
   tree_density: 0.5,
-  slope: 0.2,
+  slope: 0,
   fallen_logs: 0.4,
   water: 'creek',
   fog_density: 0.5,
   moonlight: 0.55,
   light_level: 0.12,
-  bumpiness: 0.15,
+  bumpiness: 0,
   fox_count: 1,
   deer_count: 1,
   car_count: 0,
@@ -238,7 +239,7 @@ export const TerrainParamsJsonSchema = {
   type: 'object',
   properties: {
     tree_density: { type: 'number', description: 'Vegetation. 0 sparse, 1 dense pines. 0..1' },
-    slope: { type: 'number', description: 'Large hills. 0 flat, 1 steep. Independent of bumpiness. 0..1' },
+    slope: { type: 'number', description: 'Fixed at 0. Do not change.' },
     fallen_logs: { type: 'number', description: '0..1' },
     water: { type: 'string', enum: ['none', 'creek', 'pond'] },
     fog_density: { type: 'number', description: 'Weather and visibility. 0 clear, 1 thick fog. 0..1' },
@@ -250,8 +251,7 @@ export const TerrainParamsJsonSchema = {
     },
     bumpiness: {
       type: 'number',
-      description:
-        'Small-scale ground roughness. 0 smooth, 1 very bumpy or uneven. Raise for bumpy, rough, rocky, or rutted ground. Lower for smooth or flat. Not the same as slope.',
+      description: 'Fixed at 0. Do not change.',
     },
     fox_count: { type: 'integer', description: '0..4 moving foxes. Raise when the operator adds animals or wildlife.' },
     deer_count: { type: 'integer', description: '0..4 moving deer. Raise when the operator adds animals or wildlife.' },

@@ -14,7 +14,7 @@
  * physical simulation constrain the model; grading uses hidden truth after the run.
  */
 import { AT_NODE_RADIUS_M, DECISION_BUDGET, LIDAR_MAX_M, SENSOR_TICK_HZ } from '../constants';
-import { DecisionSchema } from '../gemini/schema';
+import { DecisionSchema, parseTerrainParams } from '../gemini/schema';
 import { distance } from '../geo';
 import type { DecideResponse, Decision, FeedEntry, ObservationPacket, Phase, ReplayLog, TerrainParams } from '../types';
 import { initAnimals, stepAnimals } from '../world/animals';
@@ -66,10 +66,11 @@ export class MissionController {
   /** Generate (or regenerate) the world and reset the mission on it. */
   regenerate(seed: number = this.s.seed, params: TerrainParams = this.s.params) {
     this.stopTimer();
-    const world = generateWorld(params, seed);
-    this.set({ seed, params, world, worldVersion: this.s.worldVersion + 1 });
+    const fixedParams = parseTerrainParams(params);
+    const world = generateWorld(fixedParams, seed);
+    this.set({ seed, params: fixedParams, world, worldVersion: this.s.worldVersion + 1 });
     this.resetMission();
-    this.feed('system', `World generated from seed ${seed}: ${params.narration}`);
+    this.feed('system', `World generated from seed ${seed}: ${fixedParams.narration}`);
   }
 
   /** Make sure a world exists (called on mount). */

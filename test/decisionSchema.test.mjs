@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DecisionSchema } from '../src/lib/gemini/schema.ts';
+import { DEFAULT_TERRAIN_PARAMS, DecisionSchema, TerrainParamsSchema } from '../src/lib/gemini/schema.ts';
 
 const decision = (action) => ({
   observations: 'A path is visible ahead.',
@@ -22,4 +22,16 @@ test('rejects incomplete movement and local route commands', () => {
   assert.equal(DecisionSchema.safeParse(decision({ type: 'MOVE', turn_deg: 20 })).success, false);
   assert.equal(DecisionSchema.safeParse(decision({ type: 'GOTO_NODE', node_id: 'BASE' })).success, false);
   assert.equal(DecisionSchema.safeParse(decision({ type: 'RETURN_TO_BASE' })).success, false);
+});
+
+test('terrain schema holds slope and bumpiness at zero', () => {
+  const params = TerrainParamsSchema.parse({
+    ...DEFAULT_TERRAIN_PARAMS,
+    slope: 1,
+    bumpiness: 0.9,
+  });
+  assert.equal(params.slope, 0);
+  assert.equal(params.bumpiness, 0);
+  assert.equal(DEFAULT_TERRAIN_PARAMS.slope, 0);
+  assert.equal(DEFAULT_TERRAIN_PARAMS.bumpiness, 0);
 });
