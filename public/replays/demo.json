@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "seed": 1337,
+  "params": {
+    "tree_density": 0.5,
+    "slope": 0.2,
+    "fallen_logs": 0.4,
+    "water": "creek",
+    "fog_density": 0.5,
+    "moonlight": 0.5,
+    "fox_count": 1,
+    "deer_count": 1,
+    "fungi_patches": 2,
+    "branchiness": 0.5,
+    "narration": "Demo seed. Replace this file with a recorded Gemini run (Controls → Save replay)."
+  },
+  "entries": [
+    {
+      "seed": 1337,
+      "step": 0,
+      "packetHash": "",
+      "decision": {
+        "observations": "Example entry: trail continues ahead, dense trees left, gap right at +30°. No heat.",
+        "map_update": {
+          "node_here": null,
+          "new_frontiers": [
+            { "bearing_deg": 0, "estimated_distance_m": 12, "geometry": "CLEAR", "note": "trail ahead" },
+            { "bearing_deg": 30, "estimated_distance_m": 8, "geometry": "NARROW", "note": "gap between pines" }
+          ],
+          "frontier_updates": [],
+          "edge_annotation": null
+        },
+        "survivor_assessment": "NO_EVIDENCE",
+        "evidence": { "thermal": 0, "rgb_person": 0, "bearing_deg": null },
+        "intent": "EXPLORE_FRONTIER",
+        "action": { "type": "MOVE", "turn_deg": 0, "distance_m": 10 },
+        "confidence": 0.7,
+        "brief_reason": "I follow the open trail north before checking the gap on the right."
+      },
+      "thought": "",
+      "latencyMs": 0
+    }
+  ]
+}
