@@ -15,7 +15,7 @@ There is no local route planner, frontier selection, candidate ranking, evidence
 
 ## Per-turn contract
 
-`POST /api/decide` receives exactly three aligned 512×384 images in fixed order—RGB JPEG, thermal JPEG, depth PNG—plus an `ObservationPacket` containing:
+`POST /api/decide` receives exactly three aligned 1024×768 images in fixed order—RGB JPEG, thermal JPEG, depth PNG—plus an `ObservationPacket` containing:
 
 - world dimensions (180 m × 180 m), coordinate bounds (−90 m to +90 m on x and z), and base at `{x:0,z:0}`; coordinates are relative to base;
 - current mission phase, step, remaining decision budget, and distance travelled;
@@ -30,7 +30,7 @@ The required response fields are `bearing_deg` (absolute compass bearing, north 
 
 **Statelessness is a contract:** every model request is created from scratch with only the system instruction, current three images, and current packet. Requests set `store: false` and never set a previous-interaction ID or cached context. The same model may be selected on consecutive turns without inheriting any conversation. Any schema-correction retry is another fresh request containing the same current observations and a short validation error, not prior model conversation. The explicitly returned memory text is the only model-authored information carried across decisions; mission reset clears it.
 
-**Coordinates:** meters; x east, z south; heading 0° north/−z and clockwise positive. RGB, thermal, and depth share the front-mounted sensor camera pose, 0.7 m ahead of rover center, and 90° horizontal FOV. RGB sensor pass applies the night visibility lift; headlamp targets near-level with 30 m range. Depth is 0–35 m; black means no return or distance at/over 35 m. Sensor triplets refresh periodically at 0.5 Hz; before a decision, a one-shot capture is requested when the current frame does not match the rover pose/world version.
+**Coordinates:** meters; x east, z south; heading 0° north/−z and clockwise positive. RGB, thermal, and depth share the front-mounted sensor camera pose, 0.7 m ahead of rover center, and 90° horizontal FOV. All sensor captures are 1024×768; RGB and thermal use JPEG at 90% quality while depth is lossless PNG. RGB sensor pass applies the night visibility lift; headlamp targets near-level with 30 m range. Depth is 0–35 m; black means no return or distance at/over 35 m. Sensor triplets refresh periodically at 0.5 Hz; before a decision, a one-shot capture is requested when the current frame does not match the rover pose/world version.
 
 ## Mission and simulation behavior
 

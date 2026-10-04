@@ -17,8 +17,8 @@ test('depth maps near-to-far distance across a non-cyclic red-to-blue hue scale'
 
 test('sensor calibration declares aligned ordered images and depth decoding', () => {
   assert.deepEqual(SENSOR_CALIBRATION.image_order, ['rgb', 'thermal', 'depth']);
-  assert.equal(SENSOR_CALIBRATION.image_width, 512);
-  assert.equal(SENSOR_CALIBRATION.image_height, 384);
+  assert.equal(SENSOR_CALIBRATION.image_width, 1024);
+  assert.equal(SENSOR_CALIBRATION.image_height, 768);
   assert.equal(SENSOR_CALIBRATION.horizontal_fov_deg, 90);
   assert.equal(SENSOR_CALIBRATION.camera_height_m, 0.8);
   assert.equal(SENSOR_CALIBRATION.camera_forward_offset_m, 0.7);
