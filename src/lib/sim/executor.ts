@@ -4,9 +4,9 @@
  */
 import { MAX_MOVE_M, ROVER_SPEED_MPS, TURN_RATE_DPS } from '../constants';
 import { clamp, dirFromBearing, normDeg, wrapDeg } from '../geo';
-import type { Decision, LidarHit, RoverState } from '../types';
+import type { CollisionHit, Decision, RoverState } from '../types';
 import type { World } from '../world/terrain';
-import { forwardClearance, type DynamicBodies } from './sensors';
+import { forwardClearance, type DynamicBodies } from './collisions';
 
 export type ActionPlan =
   | { kind: 'MOVE'; turnDeg: number; distanceM: number }
@@ -18,7 +18,7 @@ export interface ExecState {
   targetHeadingDeg: number;
   startHeadingDeg: number;
   drivenM: number;
-  blockedBy: LidarHit | null;
+  blockedBy: CollisionHit | null;
 }
 
 const fmtDeg = (d: number) => `${Math.round(normDeg(d))}°`;

@@ -73,6 +73,14 @@ function ThermoIcon() {
     </Icon>
   );
 }
+function DepthIcon() {
+  return (
+    <Icon>
+      <path d="M12 3 4.5 7v10L12 21l7.5-4V7L12 3z" />
+      <path d="m4.5 7 7.5 4 7.5-4M12 11v10" />
+    </Icon>
+  );
+}
 function FirstPersonIcon() {
   return (
     <Icon>
@@ -113,15 +121,16 @@ function LayoutIcon({ immersive }: { immersive: boolean }) {
 
 function ViewModeButtons({
   person,
-  thermal,
+  sensorView,
+  cycleSensorView,
   setPerson,
-  setThermal,
 }: {
   person: PovPerson;
-  thermal: boolean;
+  sensorView: 'rgb' | 'thermal' | 'depth';
+  cycleSensorView: () => void;
   setPerson: (person: PovPerson) => void;
-  setThermal: (thermal: boolean) => void;
 }) {
+  const current = sensorView === 'rgb' ? 'visible-light' : sensorView;
   return (
     <>
       <IconButton
@@ -132,11 +141,10 @@ function ViewModeButtons({
         {person === 'third' ? <ThirdPersonIcon /> : <FirstPersonIcon />}
       </IconButton>
       <IconButton
-        label={thermal ? 'Switch to light-based sight' : 'Switch to thermal readings'}
-        pressed={thermal}
-        onClick={() => setThermal(!thermal)}
+        label={`Cycle sensor view (currently ${current})`}
+        onClick={cycleSensorView}
       >
-        {thermal ? <ThermoIcon /> : <EyeIcon />}
+        {sensorView === 'thermal' ? <ThermoIcon /> : sensorView === 'depth' ? <DepthIcon /> : <EyeIcon />}
       </IconButton>
     </>
   );
@@ -200,28 +208,22 @@ function CommandButton({
 }
 
 function SensorPreview() {
-  const show = useUIStore((s) => s.showGeminiOverlay);
-  const setShow = useUIStore((s) => s.setShowGeminiOverlay);
   const frame = useMissionStore((s) => s.frame);
-  const thermal = useUIStore((s) => s.thermal);
-  const src = frame
-    ? show
-      ? `data:image/jpeg;base64,${thermal ? frame.thermalGeminiB64 : frame.rgbGeminiB64}`
-      : thermal
-        ? frame.thermalUrl
-        : frame.rgbUrl
-    : null;
+  const sensorView = useUIStore((s) => s.sensorView);
+  const cycleSensorView = useUIStore((s) => s.cycleSensorView);
+  const src = frame ? frame[`${sensorView}Url`] : null;
+  const label = sensorView === 'rgb' ? 'Visible-light RGB' : sensorView === 'thermal' ? 'Thermal' : 'LiDAR depth';
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/80 p-2">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">Sensor frame</span>
-        <button type="button" onClick={() => setShow(!show)} className="rounded border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-zinc-800">
-          {show ? 'Gemini overlay' : 'Clean frame'}
+        <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">{label} sensor frame</span>
+        <button type="button" onClick={cycleSensorView} className="rounded border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-200 hover:bg-zinc-800">
+          Next sensor
         </button>
       </div>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={thermal ? 'Thermal sensor frame' : 'RGB sensor frame'} className="max-h-40 w-full object-contain" />
+        <img src={src} alt={`${label} sensor frame`} className="max-h-40 w-full object-contain" />
       ) : (
         <p className="text-xs text-zinc-500">No frame yet</p>
       )}
@@ -235,8 +237,8 @@ export default function Stage() {
   const phase = useMissionStore((s) => s.rover.phase);
   const seed = useMissionStore((s) => s.seed);
   const devConsole = useUIStore((s) => s.devConsole);
-  const thermal = useUIStore((s) => s.thermal);
-  const setThermal = useUIStore((s) => s.setThermal);
+  const sensorView = useUIStore((s) => s.sensorView);
+  const cycleSensorView = useUIStore((s) => s.cycleSensorView);
 
   const [layout, setLayout] = useState<'immersive' | 'classic'>('immersive');
   const [person, setPerson] = useState<PovPerson>('third');
@@ -298,7 +300,7 @@ export default function Stage() {
         <>
           <div className="absolute inset-0">
             <PovView person={person} />
-            {!thermal && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
+            {person === 'third' && sensorView === 'rgb' && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
           </div>
           <div
             className="absolute left-3 top-14 z-20 overflow-hidden rounded-md border border-cyan-100/60 shadow-[0_0_16px_rgba(34,211,238,0.18)]"
@@ -348,7 +350,7 @@ export default function Stage() {
             </button>
           </div>
           <div className="absolute bottom-4 left-3 z-20 flex gap-2">
-            <ViewModeButtons person={person} thermal={thermal} setPerson={setPerson} setThermal={setThermal} />
+            <ViewModeButtons person={person} sensorView={sensorView} cycleSensorView={cycleSensorView} setPerson={setPerson} />
           </div>
           <aside className="absolute bottom-0 right-0 top-12 z-20 w-[min(370px,38vw)] p-3 max-sm:top-auto max-sm:h-[52vh] max-sm:w-[min(300px,72vw)]">
             <ThoughtPanel hud />
@@ -372,9 +374,9 @@ export default function Stage() {
           <div className="relative min-h-0 min-w-0" style={{ gridArea: 'main' }}>
             <div className="absolute inset-0 overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]">
               <PovView person={person} />
-              {!thermal && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
+              {person === 'third' && sensorView === 'rgb' && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
               <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
-                <ViewModeButtons person={person} thermal={thermal} setPerson={setPerson} setThermal={setThermal} />
+                <ViewModeButtons person={person} sensorView={sensorView} cycleSensorView={cycleSensorView} setPerson={setPerson} />
               </div>
             </div>
           </div>

@@ -13,7 +13,7 @@
  * No local code selects routes or applies rescue-evidence gates. Only action shape and
  * physical simulation constrain the model; grading uses hidden truth after the run.
  */
-import { AT_NODE_RADIUS_M, DECISION_BUDGET, LIDAR_MAX_M, SENSOR_TICK_HZ } from '../constants';
+import { AT_NODE_RADIUS_M, COLLISION_CLEARANCE_MAX_M, DECISION_BUDGET, SENSOR_HEIGHT_M, SENSOR_TICK_HZ } from '../constants';
 import { DecisionSchema, parseTerrainParams } from '../gemini/schema';
 import { distance } from '../geo';
 import type { DecideResponse, Decision, FeedEntry, ObservationPacket, Phase, ReplayLog, TerrainParams } from '../types';
@@ -22,19 +22,14 @@ import { generateWorld } from '../world/terrain';
 import { planAction, startExecution, tickExecution, type ActionPlan } from './executor';
 import { gradeMission } from './grading';
 import { applyMapUpdate, createMapState, nodeAt } from './mapStore';
-import { renderGeminiImage } from './overlay';
 import { buildPacket } from './packetBuilder';
 import { derivePhase, phaseAfterExecution } from './phase';
 import { createReplayLog, hashPacket, loadReplay, recordEntry, ReplayPlayer, serializeReplay } from './replay';
-import { computeLidar, minLevelClearance, type DynamicBodies } from './sensors';
+import { collisionClearanceInFront, type DynamicBodies } from './collisions';
 import { initialRover, useMissionStore, type DeciderMode, type DecisionSource, type MissionState } from '@/store/missionStore';
 
 const TICK_MS = 50;
 const TRACE_SPACING_M = 0.5;
-
-/** 1×1 black JPEG, used only if neither the rig nor the overlay burner can produce a frame. */
-const PLACEHOLDER_JPEG_B64 =
-  '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=';
 
 export class MissionController {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -100,7 +95,7 @@ export class MissionController {
       lastNodeId: 'BASE',
       trace: [],
       drivenPath: [],
-      traceMinClearanceM: LIDAR_MAX_M,
+      traceMinClearanceM: COLLISION_CLEARANCE_MAX_M,
       distanceTraveledM: 0,
       exec: null,
       status: 'idle',
@@ -121,7 +116,7 @@ export class MissionController {
       feed: [],
       markPosition: null,
       grade: null,
-      lidar: world ? computeLidar(world, rover, this.dyn()) : null,
+      frame: null,
       captureRequest: s.captureRequest + 1,
       replayLog: createReplayLog(s.seed, s.params),
     });
@@ -253,12 +248,17 @@ export class MissionController {
   private sensorTick() {
     const s = this.s;
     if (!s.world) return;
-    const lidar = computeLidar(s.world, s.rover, this.dyn());
     const moving = s.exec !== null && s.exec.stage === 'DRIVE';
+    const clearance = collisionClearanceInFront(
+      s.world,
+      s.rover,
+      this.dyn(),
+      COLLISION_CLEARANCE_MAX_M,
+      SENSOR_HEIGHT_M,
+    );
     this.set({
-      lidar,
       captureRequest: s.captureRequest + 1,
-      traceMinClearanceM: moving ? Math.min(s.traceMinClearanceM, minLevelClearance(lidar)) : s.traceMinClearanceM,
+      traceMinClearanceM: moving ? Math.min(s.traceMinClearanceM, clearance) : s.traceMinClearanceM,
     });
   }
 
@@ -311,26 +311,19 @@ export class MissionController {
   }
 
   // ------------------------------------------------------------------ decisions
-  private currentFrames(packet: ObservationPacket): { rgb: string; thermal: string } {
+  private currentFrames(): { rgb: string; thermal: string; depth: string } | null {
     const f = this.s.frame;
-    if (f && f.rgbGeminiB64 && f.thermalGeminiB64) return { rgb: f.rgbGeminiB64, thermal: f.thermalGeminiB64 };
-    // The rig has not produced a frame yet: burn the overlay onto a black frame so Gemini
-    // still gets the bearing/distance grid; fall back to a 1×1 JPEG outside a browser.
-    try {
-      if (typeof document !== 'undefined') {
-        return { rgb: renderGeminiImage(null, packet.lidar, 'RGB (no render)'), thermal: renderGeminiImage(null, packet.lidar, 'THERMAL (no render)') };
-      }
-    } catch {
-      /* fall through */
-    }
-    return { rgb: PLACEHOLDER_JPEG_B64, thermal: PLACEHOLDER_JPEG_B64 };
+    const rover = this.s.rover;
+    if (!f || f.worldVersion !== this.s.worldVersion || !f.rgbB64 || !f.thermalB64 || !f.depthPngB64) return null;
+    const samePosition = Math.hypot(f.pose.x - rover.x, f.pose.z - rover.z) <= 0.05;
+    const headingDelta = Math.abs(((f.pose.headingDeg - rover.headingDeg + 540) % 360) - 180);
+    if (!samePosition || headingDelta > 0.5) return null;
+    return { rgb: f.rgbB64, thermal: f.thermalB64, depth: f.depthPngB64 };
   }
 
   private buildCurrentPacket(): ObservationPacket {
     const s = this.s;
-    const lidar = s.world ? computeLidar(s.world, s.rover, this.dyn()) : s.lidar!;
     const at = nodeAt(s.map, s.rover, AT_NODE_RADIUS_M);
-    this.set({ lidar });
     return buildPacket({
       phase: s.rover.phase,
       step: s.rover.step,
@@ -339,7 +332,6 @@ export class MissionController {
       previousAssessment: s.previousAssessment,
       pose: s.rover,
       atNode: at?.id ?? null,
-      lidar,
       map: s.map,
       lastResult: s.lastResult,
       budget: s.budget,
@@ -386,13 +378,19 @@ export class MissionController {
     }
 
     // api mode: the server decides between Gemini and the mock.
-    const frames = this.currentFrames(packet);
+    const frames = this.currentFrames();
+    if (!frames) {
+      this.inflight = false;
+      const state = this.s;
+      this.set({ needsDecision: true, status: 'running', captureRequest: state.captureRequest + 1 });
+      return;
+    }
     const t0 = performance.now();
     try {
       const res = await fetch('/api/decide', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ packet, rgb: frames.rgb, thermal: frames.thermal, budget: s.budget }),
+        body: JSON.stringify({ packet, rgb: frames.rgb, thermal: frames.thermal, depth: frames.depth, budget: s.budget }),
       });
       const json = (await res.json()) as Partial<DecideResponse> & { error?: string };
       if (!res.ok || !json.decision) throw new Error(json.error ?? `HTTP ${res.status}`);
@@ -442,11 +440,11 @@ export class MissionController {
       currentNode = applied.nodeHereId;
       lastNodeId = applied.nodeHereId;
       trace = [];
-      traceMinClearanceM = LIDAR_MAX_M;
+      traceMinClearanceM = COLLISION_CLEARANCE_MAX_M;
     } else if (currentNode && currentNode !== lastNodeId) {
       lastNodeId = currentNode;
       trace = [];
-      traceMinClearanceM = LIDAR_MAX_M;
+      traceMinClearanceM = COLLISION_CLEARANCE_MAX_M;
     }
 
     // 2. phase from intent

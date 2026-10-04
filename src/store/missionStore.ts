@@ -4,7 +4,7 @@
  * ground truth) here only for rendering/grading — never serialize it toward Gemini.
  */
 import { create } from 'zustand';
-import { DECISION_BUDGET, DEFAULT_SEED } from '@/lib/constants';
+import { COLLISION_CLEARANCE_MAX_M, DECISION_BUDGET, DEFAULT_SEED } from '@/lib/constants';
 import { DEFAULT_TERRAIN_PARAMS } from '@/lib/gemini/schema';
 import type { Vec2 } from '@/lib/geo';
 import type { ExecState } from '@/lib/sim/executor';
@@ -14,7 +14,6 @@ import type {
   Decision,
   FeedEntry,
   GradeResult,
-  LidarGrid,
   MapState,
   ReplayLog,
   RoverState,
@@ -72,7 +71,6 @@ export interface MissionState {
   grade: GradeResult | null;
 
   // sensors
-  lidar: LidarGrid | null;
   frame: SensorFrame | null;
   captureRequest: number;
 
@@ -95,7 +93,7 @@ export const useMissionStore = create<MissionState>(() => ({
   lastNodeId: 'BASE',
   trace: [],
   drivenPath: [],
-  traceMinClearanceM: 30,
+  traceMinClearanceM: COLLISION_CLEARANCE_MAX_M,
   distanceTraveledM: 0,
   exec: null,
 
@@ -120,7 +118,6 @@ export const useMissionStore = create<MissionState>(() => ({
   markPosition: null,
   grade: null,
 
-  lidar: null,
   frame: null,
   captureRequest: 0,
 
@@ -134,28 +131,28 @@ export const useMissionStore = create<MissionState>(() => ({
 
 export interface UIState {
   mainView: 'world' | 'rover';
-  thermal: boolean;
+  sensorView: 'rgb' | 'thermal' | 'depth';
   revealTruth: boolean;
   devConsole: boolean;
-  showGeminiOverlay: boolean;
   setMainView: (v: UIState['mainView']) => void;
   swapViews: () => void;
-  setThermal: (v: boolean) => void;
+  setSensorView: (v: UIState['sensorView']) => void;
+  cycleSensorView: () => void;
   setRevealTruth: (v: boolean) => void;
   setDevConsole: (v: boolean) => void;
-  setShowGeminiOverlay: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
   mainView: 'world',
-  thermal: false,
+  sensorView: 'rgb',
   revealTruth: false,
   devConsole: false,
-  showGeminiOverlay: false,
   setMainView: (mainView) => set({ mainView }),
   swapViews: () => set({ mainView: get().mainView === 'world' ? 'rover' : 'world' }),
-  setThermal: (thermal) => set({ thermal }),
+  setSensorView: (sensorView) => set({ sensorView }),
+  cycleSensorView: () => set((state) => ({
+    sensorView: state.sensorView === 'rgb' ? 'thermal' : state.sensorView === 'thermal' ? 'depth' : 'rgb',
+  })),
   setRevealTruth: (revealTruth) => set({ revealTruth }),
   setDevConsole: (devConsole) => set({ devConsole }),
-  setShowGeminiOverlay: (showGeminiOverlay) => set({ showGeminiOverlay }),
 }));

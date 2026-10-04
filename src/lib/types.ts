@@ -2,8 +2,8 @@
  * SARAH shared types — the P1↔P2↔P3↔P4 contract (plan §3b, §3c, §4; spec §4 types kept).
  * Frame conventions: see constants.ts header.
  */
-import type { LIDAR_COLUMN_KEYS, LIDAR_ROWS } from './constants';
 import type { Decision, MapUpdate, TerrainParams } from './gemini/schema';
+import type { SensorCalibration } from './sim/depth';
 
 export type { Decision, MapUpdate, TerrainParams };
 
@@ -83,25 +83,10 @@ export type Intent = Decision['intent'];
 export type ActionType = Decision['action']['type'];
 
 // ---------------------------------------------------------------------------
-// LiDAR grid (plan §3c)
+// Local simulator collision result; never sent to Gemini as a sensor channel.
 // ---------------------------------------------------------------------------
 
-export type LidarColumnKey = (typeof LIDAR_COLUMN_KEYS)[number];
-export type LidarRow = (typeof LIDAR_ROWS)[number];
-export type LidarHit = 'CLEAR' | 'TREE' | 'FALLEN_LOG' | 'ROCK' | 'WATER' | 'STEEP_SLOPE' | 'GROUND';
-
-export interface LidarCell {
-  /** Distance in meters, or null when > LIDAR_MAX_M (CLEAR). */
-  m: number | null;
-  hit: LidarHit;
-}
-
-export type LidarRowGrid = Record<LidarColumnKey, LidarCell>;
-
-export interface LidarGrid {
-  level: LidarRowGrid;
-  ground: LidarRowGrid;
-}
+export type CollisionHit = 'TREE' | 'FALLEN_LOG' | 'ROCK' | 'WATER' | 'STEEP_SLOPE' | 'OBSTACLE';
 
 // ---------------------------------------------------------------------------
 // Observation packet (plan §4, sent to Gemini verbatim as JSON text)
@@ -151,7 +136,7 @@ export interface ObservationPacket {
     previous_assessment: Assessment;
   };
   pose: { x: number; z: number; heading_deg: number; at_node: string | null };
-  lidar: LidarGrid;
+  sensors: SensorCalibration;
   map: { nodes: PacketNode[]; edges: PacketEdge[]; frontiers: PacketFrontier[] };
   last_result: string;
 }
@@ -163,13 +148,14 @@ export interface ObservationPacket {
 export interface SensorFrame {
   seq: number;
   t: number; // performance.now()
-  /** Clean UI copies (no overlay), data URLs (image/jpeg). */
+  worldVersion: number;
+  /** Clean sensor captures at the same pose/tick. Depth is a lossless image/png. */
   rgbUrl: string;
   thermalUrl: string;
-  /** Gemini copies with the burned-in overlay, base64 JPEG without the data: prefix. */
-  rgbGeminiB64: string;
-  thermalGeminiB64: string;
-  lidar: LidarGrid;
+  depthUrl: string;
+  rgbB64: string;
+  thermalB64: string;
+  depthPngB64: string;
   pose: { x: number; z: number; headingDeg: number };
 }
 
@@ -179,9 +165,10 @@ export interface SensorFrame {
 
 export interface DecideRequest {
   packet: ObservationPacket;
-  /** base64 JPEG (no data: prefix) */
+  /** base64 image payloads, without data-URL prefixes */
   rgb: string;
   thermal: string;
+  depth: string;
 }
 
 export interface DecideResponse {

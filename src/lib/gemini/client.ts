@@ -48,7 +48,7 @@ export function hasGeminiKey(): boolean {
 }
 
 // --- Interactions API input types (structural; keeps us independent of SDK internals) ---
-type ImageInput = { type: 'image'; data: string; mime_type: 'image/jpeg'; resolution?: 'low' | 'medium' | 'high' };
+type ImageInput = { type: 'image'; data: string; mime_type: 'image/jpeg' | 'image/png'; resolution?: 'low' | 'medium' | 'high' };
 type TextInput = { type: 'text'; text: string };
 
 interface InteractionLike {
@@ -139,6 +139,7 @@ export async function geminiDecide(
   packet: ObservationPacket,
   rgbB64: string,
   thermalB64: string,
+  depthPngB64: string,
   budget: number = DECISION_BUDGET,
 ): Promise<GeminiDecideResult> {
   const t0 = Date.now();
@@ -146,7 +147,8 @@ export async function geminiDecide(
   const baseInput: Array<ImageInput | TextInput> = [
     { type: 'image', data: rgbB64, mime_type: 'image/jpeg', resolution: 'low' },
     { type: 'image', data: thermalB64, mime_type: 'image/jpeg', resolution: 'low' },
-    { type: 'text', text: `RGB image first, aligned thermal image second. Observation packet:\n${JSON.stringify(packet)}` },
+    { type: 'image', data: depthPngB64, mime_type: 'image/png', resolution: 'low' },
+    { type: 'text', text: `Three images in order: visible-light RGB JPEG, aligned thermal JPEG, and aligned lossless hue-encoded LiDAR depth PNG. Decode depth only using the calibration in the observation packet.\nObservation packet:\n${JSON.stringify(packet)}` },
   ];
 
   let lastError = '';

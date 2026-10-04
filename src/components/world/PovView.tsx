@@ -1,13 +1,13 @@
 'use client';
 /**
- * Robot point-of-view canvas: third-person chase or first-person sensor pose, photo or
- * thermal. A display-only exposure lift brightens night without recoloring the sky,
- * so day and evening stay distinct. SensorRig's offscreen captures skip that lift.
+ * Third-person views use the live chase-camera canvas. First-person views display the
+ * selected synchronized sensor capture; the hidden canvas remains mounted to capture it.
+ * The chase view's exposure lift brightens night without recoloring the sky.
  */
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { CAMERA_VFOV_DEG, SENSOR_HEIGHT_M } from '@/lib/constants';
+import { CAMERA_VFOV_DEG, DEPTH_MAX_RANGE_M, NIGHT_VISIBILITY_EXPOSURE_LIFT, NIGHT_VISIBILITY_LIGHT_LIFT, SENSOR_HEIGHT_M } from '@/lib/constants';
 import { dirFromBearing } from '@/lib/geo';
 import type { World } from '@/lib/world/terrain';
 import { useMissionStore, useUIStore } from '@/store/missionStore';
@@ -53,11 +53,6 @@ function thermalMaterial(mats: ThermalMats, t: number): THREE.MeshBasicMaterial 
 /** First person: sensor pose, pitched a little so the ground in front of the robot reads. */
 function FirstPersonCamera({ world }: { world: World }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
-  useLayoutEffect(() => {
-    camera.fov = CAMERA_VFOV_DEG;
-    camera.near = 0.08;
-    camera.updateProjectionMatrix();
-  }, [camera]);
   useFrame(() => {
     const r = useMissionStore.getState().rover;
     const y = world.heightAt(r.x, r.z) + SENSOR_HEIGHT_M;
@@ -66,6 +61,42 @@ function FirstPersonCamera({ world }: { world: World }) {
     camera.lookAt(r.x + d.x * 22, y - 0.45, r.z + d.z * 22);
   });
   return null;
+}
+
+function makeChaseDepthMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: { maxRangeM: { value: DEPTH_MAX_RANGE_M } },
+    vertexShader: `
+      varying vec3 chaseViewPosition;
+      void main() {
+        vec4 localPosition = vec4(position, 1.0);
+        #ifdef USE_INSTANCING
+          localPosition = instanceMatrix * localPosition;
+        #endif
+        vec4 viewPosition = modelViewMatrix * localPosition;
+        chaseViewPosition = viewPosition.xyz;
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float maxRangeM;
+      varying vec3 chaseViewPosition;
+      void main() {
+        float distanceM = length(chaseViewPosition);
+        if (distanceM >= maxRangeM) {
+          gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+          return;
+        }
+        float hue = (240.0 / 360.0) * max(distanceM, 0.0) / maxRangeM;
+        vec3 rgb = clamp(abs(fract(hue + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+        gl_FragColor = vec4(rgb, 1.0);
+      }
+    `,
+    depthTest: true,
+    depthWrite: true,
+    toneMapped: false,
+    fog: false,
+  });
 }
 
 function isFillLight(o: THREE.Object3D): o is THREE.AmbientLight | THREE.HemisphereLight | THREE.DirectionalLight {
@@ -77,15 +108,17 @@ function isFillLight(o: THREE.Object3D): o is THREE.AmbientLight | THREE.Hemisph
  * `userData.sensor`; those passes stay ungraded. The on-screen camera gets either
  * an exposure lift that fades toward daytime, or a thermal false-color pass.
  */
-function DisplayGrade() {
+function DisplayGrade({ person }: { person: PovPerson }) {
   const gl = useThree((s) => s.gl);
   const mats = useMemo<ThermalMats>(() => new Map(), []);
+  const chaseDepthMaterial = useMemo(() => makeChaseDepthMaterial(), []);
   useEffect(
     () => () => {
       for (const m of mats.values()) m.dispose();
       mats.clear();
+      chaseDepthMaterial.dispose();
     },
-    [mats],
+    [chaseDepthMaterial, mats],
   );
   useLayoutEffect(() => {
     const orig = gl.render.bind(gl);
@@ -95,7 +128,23 @@ function DisplayGrade() {
         orig(scene, camera);
         return;
       }
-      if (useUIStore.getState().thermal) {
+      if (person === 'third' && useUIStore.getState().sensorView === 'depth') {
+        const prevOverride = scene.overrideMaterial;
+        const prevBg = scene.background;
+        const prevFog = scene.fog;
+        scene.overrideMaterial = chaseDepthMaterial;
+        scene.background = BLACK;
+        scene.fog = null;
+        try {
+          orig(scene, camera);
+        } finally {
+          scene.overrideMaterial = prevOverride;
+          scene.background = prevBg;
+          scene.fog = prevFog;
+        }
+        return;
+      }
+      if (useUIStore.getState().sensorView === 'thermal') {
         const swapped: Array<[THREE.Mesh, THREE.Material | THREE.Material[]]> = [];
         const prevBg = scene.background;
         const prevFog = scene.fog;
@@ -118,7 +167,7 @@ function DisplayGrade() {
         return;
       }
       const level = useMissionStore.getState().params.light_level;
-      const lift = 1 + (1 - level) * 1.15;
+      const lift = 1 + (1 - level) * NIGHT_VISIBILITY_LIGHT_LIFT;
       const lights: Array<[THREE.Light, number]> = [];
       scene.traverse((o) => {
         if (!isFillLight(o)) return;
@@ -126,7 +175,7 @@ function DisplayGrade() {
         o.intensity *= lift;
       });
       const prevExp = gl.toneMappingExposure;
-      gl.toneMappingExposure = prevExp * (1 + (1 - level) * 0.35);
+      gl.toneMappingExposure = prevExp * (1 + (1 - level) * NIGHT_VISIBILITY_EXPOSURE_LIFT);
       try {
         orig(scene, camera);
       } finally {
@@ -138,19 +187,28 @@ function DisplayGrade() {
     return () => {
       gl.render = orig;
     };
-  }, [gl, mats]);
+  }, [chaseDepthMaterial, gl, mats, person]);
   return null;
 }
 
 export default function PovView({ person }: { person: PovPerson }) {
   const world = useMissionStore((s) => s.world);
   const worldVersion = useMissionStore((s) => s.worldVersion);
-  const thermal = useUIStore((s) => s.thermal);
+  const frame = useMissionStore((s) => s.frame);
+  const sensorView = useUIStore((s) => s.sensorView);
+  const useSensorFrame = person === 'first';
+  const sensorImage = frame
+    ? sensorView === 'rgb'
+      ? frame.rgbUrl
+      : sensorView === 'thermal'
+        ? frame.thermalUrl
+        : frame.depthUrl
+    : null;
   return (
-    <div className={`h-full w-full ${thermal ? '' : 'pov-photo'}`}>
+    <div className={`relative h-full w-full ${sensorView === 'rgb' ? 'pov-photo' : ''}`}>
       <Canvas
-        className="h-full w-full"
-        camera={{ fov: 60, near: 0.5, far: 500, position: [0, 8, 14] }}
+        className={`h-full w-full ${useSensorFrame ? 'invisible' : ''}`}
+        camera={{ fov: person === 'first' ? CAMERA_VFOV_DEG : 60, near: person === 'first' ? 0.08 : 0.5, far: 500, position: [0, 8, 14] }}
         dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
@@ -164,8 +222,31 @@ export default function PovView({ person }: { person: PovPerson }) {
         )}
         {world && <Sky world={world} />}
         <TruthLayerToggle />
-        <DisplayGrade />
+        <DisplayGrade person={person} />
       </Canvas>
+      {useSensorFrame && sensorImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={sensorImage}
+          alt={
+            sensorView === 'depth'
+              ? 'LiDAR depth image: hue encodes radial distance from red at 0 m through yellow, green and cyan to blue just below 35 m; black is no return or 35 m and farther'
+              : sensorView === 'thermal'
+                ? 'Thermal sensor image'
+                : 'Visible-light RGB sensor image'
+          }
+          className="absolute inset-0 h-full w-full object-contain"
+        />
+      )}
+      {sensorView === 'depth' && (sensorImage || person === 'third') && (
+        <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded bg-slate-950/80 px-2 py-1 text-[11px] text-white">
+          <span>0 m</span>
+          <span className="h-2 w-24 rounded-sm" style={{ background: 'linear-gradient(to right, red, yellow, lime, cyan, blue)' }} />
+          <span>35 m</span>
+          <span className="ml-1 text-white/70">black: no return / ≥35 m</span>
+        </div>
+      )}
+      {useSensorFrame && !sensorImage && <div className="absolute inset-0 grid place-items-center bg-black text-sm text-white/70">Waiting for sensor frame…</div>}
       {!world && <div className="absolute inset-0 grid place-items-center text-sm text-slate-600">Generating world…</div>}
     </div>
   );

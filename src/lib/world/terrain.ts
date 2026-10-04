@@ -17,7 +17,7 @@ export interface Obstacle {
   x: number;
   z: number;
   r: number;
-  /** Height of the top above ground (m). Used by the LiDAR rows. */
+  /** Height of the top above ground (m). Used by local collision bookkeeping. */
   top: number;
 }
 

@@ -1,11 +1,12 @@
 /**
  * P3/P2 — build the ObservationPacket (plan §4). Contains only what Gemini may know:
- * pose, LiDAR, the map Gemini authored, mission bookkeeping, last_result.
+ * pose, image-sensor calibration, the map Gemini authored, mission bookkeeping, last_result.
  * Never pass World.truth here.
  */
 import { DECISION_BUDGET } from '../constants';
 import { bearingDeg, distance, round } from '../geo';
-import type { Assessment, LidarGrid, MapState, ObservationPacket, Phase } from '../types';
+import type { Assessment, MapState, ObservationPacket, Phase } from '../types';
+import { SENSOR_CALIBRATION } from './depth';
 
 export interface PacketInputs {
   phase: Phase;
@@ -15,7 +16,6 @@ export interface PacketInputs {
   previousAssessment: Assessment;
   pose: { x: number; z: number; headingDeg: number };
   atNode: string | null;
-  lidar: LidarGrid;
   map: MapState;
   lastResult: string;
   budget?: number;
@@ -33,7 +33,7 @@ export function buildPacket(i: PacketInputs): ObservationPacket {
       previous_assessment: i.previousAssessment,
     },
     pose: { x: round(i.pose.x), z: round(i.pose.z), heading_deg: Math.round(i.pose.headingDeg) % 360, at_node: i.atNode },
-    lidar: i.lidar,
+    sensors: SENSOR_CALIBRATION,
     map: {
       nodes: i.map.nodes.map((n) => ({
         id: n.id,

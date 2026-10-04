@@ -29,13 +29,10 @@ function template(partial: Partial<Decision> & { action: Decision['action'] }): 
 export default function ManualConsole({ className = '' }: { className?: string }) {
   const { submitManualDecision, setDeciderMode, deciderMode, status } = useMission();
   const nodes = useMissionStore((s) => s.map.nodes);
-  const lidar = useMissionStore((s) => s.lidar);
   const [text, setText] = useState(() => JSON.stringify(template({ action: { type: 'MOVE', turn_deg: 0, distance_m: 8 } }), null, 2));
   const [msg, setMsg] = useState<string | null>(null);
 
   const waiting = deciderMode === 'manual' && status === 'waiting_for_gemini';
-  const centerM = lidar?.level['0'].m;
-
   const presets = useMemo(
     () => [
       { label: 'MOVE 8 m', d: template({ action: { type: 'MOVE', turn_deg: 0, distance_m: 8 } }) },
@@ -120,7 +117,7 @@ export default function ManualConsole({ className = '' }: { className?: string }
             Submit decision
           </Button>
           <span className="font-mono text-[10px] text-zinc-500">
-            nodes: {nodes.map((n) => n.id).join(', ')} · center LiDAR {centerM === undefined ? '—' : centerM === null ? '>30' : `${centerM} m`}
+            nodes: {nodes.map((n) => n.id).join(', ')} · RGB + thermal + depth sensor inputs
           </span>
           {msg && <span className="ml-auto text-zinc-400">{msg}</span>}
         </div>

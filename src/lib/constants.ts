@@ -19,30 +19,17 @@ export const COLLISION_STOP_M = 0.5; // stop this far before an obstacle surface
 export const MAX_SLOPE_DEG = 35;
 
 // Sensors
-export const LIDAR_MAX_M = 30;
-export const HEADLAMP_RANGE_M = 15;
+export const DEPTH_MAX_RANGE_M = 35;
+export const COLLISION_CLEARANCE_MAX_M = 30;
+export const HEADLAMP_RANGE_M = 30;
 export const CAMERA_HFOV_DEG = 90;
 export const SENSOR_IMAGE_W = 512;
 export const SENSOR_IMAGE_H = 384;
 export const SENSOR_HEIGHT_M = 0.8; // camera / level LiDAR row height above ground
-export const LIDAR_GROUND_PITCH_DEG = -15; // ground row pitch
-export const LIDAR_RAYS_PER_CELL = 3;
-export const SENSOR_TICK_HZ = 1;
-
-/** LiDAR column keys: 9 × 10° sectors over the 90° FOV, keyed by relative bearing. */
-export const LIDAR_COLUMN_KEYS = [
-  '-40',
-  '-30',
-  '-20',
-  '-10',
-  '0',
-  '10',
-  '20',
-  '30',
-  '40',
-] as const;
-export const LIDAR_COLUMN_WIDTH_DEG = 10;
-export const LIDAR_ROWS = ['level', 'ground'] as const;
+export const SENSOR_FORWARD_OFFSET_M = 0.7; // rover front is 0.575 m forward from its center
+export const SENSOR_TICK_HZ = 0.5;
+export const NIGHT_VISIBILITY_LIGHT_LIFT = 1.8;
+export const NIGHT_VISIBILITY_EXPOSURE_LIFT = 0.65;
 
 // Mission
 export const DECISION_BUDGET = 40;

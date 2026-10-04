@@ -2,39 +2,23 @@
  * P2 — deterministic mock decider. Produces a valid Decision from the packet ALONE
  * (it never sees ground truth) so the P1/P3/P4 loop runs without a Gemini key.
  *
- * This deliberately simple offline fixture steers toward the clearest LiDAR column and
- * declares occasional map memory. It is not a substitute for Gemini's navigation policy.
+ * This offline fixture cannot inspect the RGB, thermal, or depth images. It produces a
+ * deterministic action only so the local simulation can be exercised without Gemini.
  */
-import { LIDAR_COLUMN_KEYS, LIDAR_MAX_M, MAX_MOVE_M } from '../constants';
-import { normDeg } from '../geo';
-import type { Decision, LidarColumnKey, ObservationPacket, TerrainParams } from '../types';
+import type { Decision, ObservationPacket, TerrainParams } from '../types';
 import { DEFAULT_TERRAIN_PARAMS, describeLight } from './schema';
-
-function columnScore(packet: ObservationPacket, key: LidarColumnKey): number {
-  const level = packet.lidar.level[key];
-  const ground = packet.lidar.ground[key];
-  let score = level.m ?? LIDAR_MAX_M;
-  if (ground.hit === 'WATER' || ground.hit === 'STEEP_SLOPE') score = Math.min(score, (ground.m ?? 2) - 0.5);
-  if (ground.hit === 'FALLEN_LOG') score = Math.min(score, (ground.m ?? 2));
-  // mild preference for straight ahead
-  score -= Math.abs(Number(key)) * 0.02;
-  return score;
-}
 
 export function mockDecide(packet: ObservationPacket): Decision {
   const step = packet.mission.step;
-  const heading = packet.pose.heading_deg;
   const blocked = /^BLOCKED/.test(packet.last_result);
   const nodes = packet.map.nodes;
 
-  // Stuck against something the thin LiDAR rays do not see (body-width contact): turn to look.
-  const stuck = blocked && /after 0\.0 m/.test(packet.last_result);
-  if (stuck) {
-    const turn = step % 2 === 0 ? 70 : -110;
+  if (blocked) {
+    const turn = step % 2 === 0 ? 90 : -90;
     return {
-      observations: `Mock: the last move was blocked immediately by ${/BLOCKED by (\w+)/.exec(packet.last_result)?.[1] ?? 'an obstacle'} the grid does not show; turning ${turn}° to scan.`,
+      observations: `Mock fixture: cannot interpret the sensor images; the previous simulator action was blocked, so it turns ${turn}°.`,
       map_update: {
-        node_here: packet.pose.at_node ? null : { kind: 'DEAD_END', note: 'Mock: blocked at body contact' },
+        node_here: packet.pose.at_node ? null : { kind: 'DEAD_END', note: 'Mock fixture: blocked' },
         new_frontiers: [],
         frontier_updates: [],
         edge_annotation: null,
@@ -44,80 +28,29 @@ export function mockDecide(packet: ObservationPacket): Decision {
       intent: 'SCAN',
       action: { type: 'MOVE', turn_deg: turn, distance_m: 0 },
       confidence: 0.4,
-      brief_reason: `I cannot move forward, so I turn ${turn}° in place to look for another way.`,
+      brief_reason: `The offline fixture turns ${turn}° after a collision; it does not analyze images.`,
     };
   }
 
-  // Rank columns by clearance; after a blocked move, avoid the columns around the blocked heading.
-  const ranked = [...LIDAR_COLUMN_KEYS]
-    .map((k) => ({ k, s: columnScore(packet, k) }))
-    .filter((c) => !blocked || Math.abs(Number(c.k)) >= 20)
-    .sort((a, b) => b.s - a.s);
-  const best = ranked[0];
-  const bestM = packet.lidar.level[best.k].m ?? LIDAR_MAX_M;
-
-  // Everything close: turn in place to look around.
-  if (best.s < 3) {
-    return {
-      observations: `Mock: obstacles within ${best.s.toFixed(1)} m across the whole grid; turning to look for an opening.`,
-      map_update: {
-        node_here: blocked ? { kind: 'DEAD_END', note: 'Mock: boxed in, turning around' } : null,
-        new_frontiers: [],
-        frontier_updates: [],
-        edge_annotation: blocked ? { terrain: 'FOREST', hazard_cost: 0.5 } : null,
-      },
-      survivor_assessment: 'NO_EVIDENCE',
-      evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
-      intent: 'SCAN',
-      action: { type: 'MOVE', turn_deg: 90, distance_m: 0 },
-      confidence: 0.4,
-      brief_reason: 'I am boxed in, so I turn 90° to scan for an opening.',
-    };
-  }
-
-  const turn = Number(best.k);
-  const distance = Math.max(1, Math.min(MAX_MOVE_M, Math.floor(bestM - 1.5)));
-
-  const declareNode = blocked || step % 3 === 0;
-  const nodeKind = blocked ? 'DEAD_END' : nodes.length <= 1 ? 'JUNCTION' : 'VIEWPOINT';
-
-  // Frontiers for other open columns (absolute bearings), max 2, only when declaring a node.
-  const newFrontiers = declareNode
-    ? ranked
-        .slice(1)
-        .filter((c) => c.s >= 12 && Math.abs(Number(c.k) - turn) >= 20)
-        .slice(0, 2)
-        .map((c) => ({
-          bearing_deg: Math.round(normDeg(heading + Number(c.k))),
-          estimated_distance_m: Math.round(packet.lidar.level[c.k].m ?? LIDAR_MAX_M),
-          geometry: c.s >= 20 ? ('CLEAR' as const) : ('NARROW' as const),
-          note: `Mock: open column ${c.k}`,
-        }))
-    : [];
-
-  // Mark an UNEXPLORED frontier we are now pointing at as TRAVERSED.
-  const absBearing = normDeg(heading + turn);
-  const frontierUpdates = packet.map.frontiers
-    .filter((f) => f.status === 'UNEXPLORED' && Math.abs(((f.bearing_deg - absBearing + 540) % 360) - 180) < 15 && f.from_node === packet.pose.at_node)
-    .slice(0, 1)
-    .map((f) => ({ id: f.id, status: 'TRAVERSED' as const }));
+  const turn = step % 4 === 1 ? 45 : step % 4 === 3 ? -45 : 0;
+  const distance = 6;
+  const declareNode = step % 3 === 0;
+  const nodeKind = nodes.length <= 1 ? 'JUNCTION' : 'VIEWPOINT';
 
   return {
-    observations: `Mock: clearest column ${best.k} reads ${bestM >= LIDAR_MAX_M ? '>30' : bestM.toFixed(1)} m${
-      blocked ? ' after a blocked move' : ''
-    }; no thermal signature evaluated.`,
+    observations: 'Mock fixture: RGB, thermal, and depth images are not interpreted; this is a deterministic test action.',
     map_update: {
       node_here: declareNode ? { kind: nodeKind, note: blocked ? 'Mock: blocked here' : `Mock viewpoint at step ${step}` } : null,
-      new_frontiers: newFrontiers,
-      frontier_updates: frontierUpdates,
-      edge_annotation: declareNode ? { terrain: 'FOREST', hazard_cost: blocked ? 0.5 : 0.1 } : null,
+      new_frontiers: [],
+      frontier_updates: [],
+      edge_annotation: declareNode ? { terrain: 'FOREST', hazard_cost: 0.1 } : null,
     },
     survivor_assessment: 'NO_EVIDENCE',
     evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
     intent: 'EXPLORE_FRONTIER',
     action: { type: 'MOVE', turn_deg: turn, distance_m: distance },
     confidence: 0.6,
-    brief_reason: `I head ${turn === 0 ? 'straight' : `${turn > 0 ? 'right' : 'left'} ${Math.abs(turn)}°`} toward the clearest column for ${distance} m.`,
+    brief_reason: `The offline fixture issues a deterministic ${turn}° turn and ${distance} m move.`,
   };
 }
 

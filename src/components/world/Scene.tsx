@@ -287,14 +287,14 @@ function Rover({ world }: { world: World }) {
       <spotLight
         ref={light}
         position={[0, 0.64, -0.3]}
-        angle={0.62}
+        angle={0.78}
         penumbra={0.55}
-        intensity={260}
+        intensity={520}
         distance={HEADLAMP_RANGE_M * 2}
         decay={1.6}
         color="#fff0c8"
       />
-      <object3D ref={target} position={[0, -0.6, -HEADLAMP_RANGE_M]} />
+      <object3D ref={target} position={[0, 0.1, -HEADLAMP_RANGE_M]} />
     </group>
   );
 }
