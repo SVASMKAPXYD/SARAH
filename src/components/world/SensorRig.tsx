@@ -102,7 +102,7 @@ function readback(
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Unable to create sensor image canvas context.');
   context.putImageData(imageData, 0, 0);
-  const url = mime === 'image/png' ? canvas.toDataURL(mime) : canvas.toDataURL(mime, 0.75);
+  const url = mime === 'image/png' ? canvas.toDataURL(mime) : canvas.toDataURL(mime, 0.9);
   const separator = url.indexOf(',');
   if (separator < 0) throw new Error(`Unable to encode sensor capture as ${mime}.`);
   return { url, base64: url.slice(separator + 1) };
