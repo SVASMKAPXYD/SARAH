@@ -8,20 +8,24 @@ import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Tabs } from '@/components/ui/Tabs';
 import { useMission } from '@/hooks/useMission';
+import { describeLight } from '@/lib/gemini/schema';
 import type { TerrainParams } from '@/lib/types';
 import { useMissionStore } from '@/store/missionStore';
 
 type Tab = 'chat' | 'advanced';
 
 const SLIDERS: { key: keyof TerrainParams; label: string; min: number; max: number; step: number }[] = [
+  { key: 'light_level', label: 'light level', min: 0, max: 1, step: 0.05 },
+  { key: 'bumpiness', label: 'bumpiness', min: 0, max: 1, step: 0.05 },
   { key: 'tree_density', label: 'tree density', min: 0, max: 1, step: 0.05 },
   { key: 'slope', label: 'slope', min: 0, max: 1, step: 0.05 },
   { key: 'fallen_logs', label: 'fallen logs', min: 0, max: 1, step: 0.05 },
   { key: 'fog_density', label: 'fog', min: 0, max: 1, step: 0.05 },
   { key: 'moonlight', label: 'moonlight', min: 0, max: 1, step: 0.05 },
   { key: 'branchiness', label: 'branchiness', min: 0, max: 1, step: 0.05 },
-  { key: 'fox_count', label: 'foxes', min: 0, max: 2, step: 1 },
-  { key: 'deer_count', label: 'deer', min: 0, max: 2, step: 1 },
+  { key: 'car_count', label: 'cars', min: 0, max: 4, step: 1 },
+  { key: 'fox_count', label: 'foxes', min: 0, max: 4, step: 1 },
+  { key: 'deer_count', label: 'deer', min: 0, max: 4, step: 1 },
   { key: 'fungi_patches', label: 'fungi patches', min: 0, max: 3, step: 1 },
 ];
 
@@ -77,9 +81,13 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
       <CardBody className="space-y-2 text-xs">
         {tab === 'chat' ? (
           <>
-            <p className="text-zinc-400">
+            <p className="text-zinc-200">
               {narration}
-              {source && <span className="ml-1 text-zinc-600">({source})</span>}
+              {source && <span className="ml-1 text-zinc-500">({source})</span>}
+            </p>
+            <p className="font-mono text-[10px] leading-relaxed text-zinc-400">
+              Light {params.light_level.toFixed(2)} ({describeLight(params.light_level)}) · bump {params.bumpiness.toFixed(2)} · cars {params.car_count} · animals {params.fox_count} fox / {params.deer_count} deer · survivor {params.survivor_situation}
+              {params.fog_density >= 0.65 ? ' · thick fog' : ''}
             </p>
             <form
               className="flex gap-1.5"
@@ -91,7 +99,7 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
               <input
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="denser pines, a creek on the east side, light fog…"
+                placeholder="evening, bumpier ground, survivor in a ditch, add cars and animals…"
                 disabled={busy || running}
                 className="min-w-0 flex-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600"
               />
@@ -120,6 +128,19 @@ export default function TerrainChat({ className = '' }: { className?: string }) 
                   <span className="text-right font-mono text-zinc-200">{Number(draft[s.key]).toFixed(s.step < 1 ? 2 : 0)}</span>
                 </label>
               ))}
+              <label className="grid grid-cols-[92px_1fr] items-center gap-2 text-zinc-400">
+                <span>survivor</span>
+                <select
+                  value={draft.survivor_situation}
+                  onChange={(e) => setDraft({ ...draft, survivor_situation: e.target.value as TerrainParams['survivor_situation'] })}
+                  className="rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 font-mono text-xs text-zinc-200"
+                >
+                  <option value="seated">seated</option>
+                  <option value="ditch">ditch</option>
+                  <option value="slope">slope</option>
+                  <option value="obstacle">obstacle</option>
+                </select>
+              </label>
               <label className="grid grid-cols-[92px_1fr] items-center gap-2 text-zinc-400">
                 <span>water</span>
                 <select

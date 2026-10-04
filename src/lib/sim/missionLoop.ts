@@ -99,6 +99,7 @@ export class MissionController {
       map: createMapState(),
       lastNodeId: 'BASE',
       trace: [],
+      drivenPath: [],
       traceMinClearanceM: LIDAR_MAX_M,
       distanceTraveledM: 0,
       exec: null,
@@ -269,10 +270,14 @@ export class MissionController {
     const pose = r.pose;
     const trace = s.trace;
     const last = trace[trace.length - 1];
-    const newTrace = r.movedM > 0 && (!last || distance(last, pose) >= TRACE_SPACING_M) ? [...trace, { x: pose.x, z: pose.z }] : trace;
+    const point = { x: pose.x, z: pose.z };
+    const newTrace = r.movedM > 0 && (!last || distance(last, pose) >= TRACE_SPACING_M) ? [...trace, point] : trace;
+    const path = s.drivenPath;
+    const pathLast = path[path.length - 1];
+    const drivenPath = r.movedM > 0 && (!pathLast || distance(pathLast, pose) >= TRACE_SPACING_M) ? [...path, point] : path;
     const at = nodeAt(s.map, pose, AT_NODE_RADIUS_M);
     const rover = { ...s.rover, x: pose.x, z: pose.z, headingDeg: pose.headingDeg, currentNode: at?.id ?? null };
-    this.set({ rover, exec: r.exec, trace: newTrace, distanceTraveledM: s.distanceTraveledM + r.movedM });
+    this.set({ rover, exec: r.exec, trace: newTrace, drivenPath, distanceTraveledM: s.distanceTraveledM + r.movedM });
     if (r.done) this.onActionDone(r.exec.plan, r.lastResult ?? '');
   }
 
@@ -282,12 +287,15 @@ export class MissionController {
     let phase: Phase = s.rover.phase;
     let lastNodeId = s.lastNodeId;
     let trace = s.trace;
+    let drivenPath = s.drivenPath;
     let markPosition = s.markPosition;
     const rover = { ...s.rover };
 
-    // final pose always closes the trace
+    // final pose always closes the segment trace and the full-run trail
     const lastPt = trace[trace.length - 1];
     if (!lastPt || distance(lastPt, rover) > 0.05) trace = [...trace, { x: rover.x, z: rover.z }];
+    const pathLast = drivenPath[drivenPath.length - 1];
+    if (!pathLast || distance(pathLast, rover) > 0.05) drivenPath = [...drivenPath, { x: rover.x, z: rover.z }];
 
     if (plan.kind === 'MARK' && plan.accepted) {
       const centerM = s.lidar?.level['0'].m ?? 0;
@@ -302,7 +310,7 @@ export class MissionController {
     }
     rover.phase = phase;
 
-    this.set({ rover, lastNodeId, trace, markPosition, lastResult: lastResult, exec: null, needsDecision: true, returnRoute: safeReturnPath(s.map, rover.currentNode ?? lastNodeId) });
+    this.set({ rover, lastNodeId, trace, drivenPath, markPosition, lastResult: lastResult, exec: null, needsDecision: true, returnRoute: safeReturnPath(s.map, rover.currentNode ?? lastNodeId) });
     this.feed('result', lastResult);
 
     if (phase === 'COMPLETE') this.finish('complete');

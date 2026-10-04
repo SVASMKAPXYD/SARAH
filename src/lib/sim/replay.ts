@@ -5,7 +5,7 @@
  * A replay is a recording, not a decision-maker.
  */
 import { fnv1a } from '../geo';
-import { DecisionSchema, TerrainParamsSchema } from '../gemini/schema';
+import { DecisionSchema, parseTerrainParams } from '../gemini/schema';
 import type { Decision, ObservationPacket, ReplayEntry, ReplayLog, TerrainParams } from '../types';
 
 export function hashPacket(packet: ObservationPacket): string {
@@ -27,7 +27,7 @@ export function serializeReplay(log: ReplayLog): string {
 export function parseReplay(json: unknown): ReplayLog {
   const o = json as Partial<ReplayLog>;
   if (!o || o.version !== 1 || typeof o.seed !== 'number' || !Array.isArray(o.entries)) throw new Error('invalid replay log');
-  const params = TerrainParamsSchema.parse(o.params);
+  const params = parseTerrainParams(o.params);
   const entries: ReplayEntry[] = o.entries.map((e, i) => {
     const entry = e as Partial<ReplayEntry>;
     return {

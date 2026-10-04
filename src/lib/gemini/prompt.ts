@@ -32,7 +32,25 @@ export function buildSystemInstruction(budget: number = DECISION_BUDGET): string
   return PERMANENT_INSTRUCTION_TEMPLATE.replace('{budget}', String(budget));
 }
 
-export const TERRAIN_INSTRUCTION = `You design a procedural night-forest level for a search-and-rescue rover simulation.
-Turn the operator's sentence into TerrainParams. All 0..1 fields are relative intensities
-(0.5 = default). Counts are small integers. "narration" is ONE short line restating the
-scene for the operator. Return JSON only, matching the schema.`;
+export const TERRAIN_INSTRUCTION = `You edit a procedural forest for a search-and-rescue rover simulation.
+The operator describes the scene in everyday language. Map that sentence onto TerrainParams.
+Start from the current params and change only what they asked for. Return the FULL object.
+
+Qualitative mappings:
+- day, daytime, noon, sunny → light_level about 0.95 and moonlight low (about 0.15)
+- evening, dusk, sunset, twilight → light_level about 0.42
+- night, midnight, moonlit → light_level about 0.08 and moonlight higher
+- dawn → light_level about 0.30
+- bumpy, rough, uneven, rutted → bumpiness high (0.7–1). smooth or flat → bumpiness near 0. slope is large hills, not bumpiness
+- fog, mist, poor visibility → fog_density. clear sky → fog_density near 0
+- denser trees or pines → tree_density. open or sparse → lower tree_density
+- add cars or vehicles → car_count at least 2 (max 4). no cars → 0
+- add animals, wildlife, or moving animals → fox_count and deer_count at least 2 (max 4) unless they name only one species
+- survivor stuck in a ditch, gully, or trench → survivor_situation "ditch"
+- survivor on a slope or steep bank → "slope"
+- survivor pinned or trapped against a rock or log → "obstacle"
+- survivor sitting or seated → "seated"
+
+narration is ONE short line confirming what changed, not a restatement of every number.
+Example: "Evening, bumpier ground, survivor in a ditch, cars and moving animals added."
+Counts are integers. 0..1 fields stay inside 0..1. Return JSON only, matching the schema.`;
