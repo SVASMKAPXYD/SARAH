@@ -43,6 +43,7 @@ export async function POST(req: Request) {
     const res: DecideResponse = {
       decision,
       thoughtSummary: 'Mock decider: no model call. Steering toward the clearest LiDAR column.',
+      model: null,
       latencyMs: Date.now() - t0,
       tokens: { input: 0, output: 0, total: 0 },
       source: 'mock',
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
     const res: DecideResponse = {
       decision: DecisionSchema.parse(r.decision),
       thoughtSummary: r.thoughtSummary,
+      model: r.model,
       latencyMs: r.latencyMs,
       tokens: r.tokens,
       source: 'gemini',
@@ -63,7 +65,8 @@ export async function POST(req: Request) {
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
     console.error('[api/decide] gemini failure:', msg);
-    const status = /429|RESOURCE_EXHAUSTED/.test(msg) ? 429 : 502;
+    const rawStatus = Number((e as { status?: unknown; code?: unknown })?.status ?? (e as { code?: unknown })?.code);
+    const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : /429|RESOURCE_EXHAUSTED/.test(msg) ? 429 : 502;
     return NextResponse.json({ error: msg, source: 'gemini' }, { status });
   }
 }

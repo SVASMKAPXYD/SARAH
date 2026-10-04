@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --experimental-strip-types --test",
     "build:azure": "node scripts/build-azure.mjs",
     "sync:env": "node scripts/sync-env.mjs"
   },

@@ -6,20 +6,19 @@
  *     action in progress?  → executor tick (4 m/s, 180°/s, collision stop)
  *     action complete?     → build packet, grab latest RGB/thermal (or a placeholder),
  *                            ask the decider (api | manual | replay), validate, apply
- *                            map_update, derive phase, plan + start the action,
+ *                            map_update, derive phase, execute the model's action,
  *                            record replay entry, append feed
  *   until budget exhausted / EXTRACT reaches BASE / error → grade → complete | failed.
  *
- * Nothing here judges Gemini's content: physics (executor), the two protocol rules
- * (executor) and schema shape (zod) are the only checks. Runs in the browser only.
+ * No local code selects routes or applies rescue-evidence gates. Only action shape and
+ * physical simulation constrain the model; grading uses hidden truth after the run.
  */
 import { AT_NODE_RADIUS_M, DECISION_BUDGET, LIDAR_MAX_M, SENSOR_TICK_HZ } from '../constants';
 import { DecisionSchema } from '../gemini/schema';
-import { dirFromBearing, distance } from '../geo';
+import { distance } from '../geo';
 import type { DecideResponse, Decision, FeedEntry, ObservationPacket, Phase, ReplayLog, TerrainParams } from '../types';
 import { initAnimals, stepAnimals } from '../world/animals';
 import { generateWorld } from '../world/terrain';
-import { safeReturnPath } from './dijkstra';
 import { planAction, startExecution, tickExecution, type ActionPlan } from './executor';
 import { gradeMission } from './grading';
 import { applyMapUpdate, createMapState, nodeAt } from './mapStore';
@@ -103,12 +102,12 @@ export class MissionController {
       traceMinClearanceM: LIDAR_MAX_M,
       distanceTraveledM: 0,
       exec: null,
-      returnRoute: ['BASE'],
       status: 'idle',
       pausedFrom: null,
       needsDecision: false,
       error: null,
       lastSource: null,
+      lastModel: null,
       budget: DECISION_BUDGET,
       lastDecision: null,
       lastThought: '',
@@ -180,7 +179,7 @@ export class MissionController {
     const packet = this.pendingPacket;
     this.pendingPacket = null;
     this.inflight = false;
-    this.applyDecision(packet, parsed.data, { thought: '', latencyMs: 0, tokens: { input: 0, output: 0, total: 0 }, source: 'manual' });
+    this.applyDecision(packet, parsed.data, { thought: '', model: null, latencyMs: 0, tokens: { input: 0, output: 0, total: 0 }, source: 'manual' });
     return { ok: true };
   }
 
@@ -285,7 +284,6 @@ export class MissionController {
     const s = this.s;
     if (!s.world) return;
     let phase: Phase = s.rover.phase;
-    let lastNodeId = s.lastNodeId;
     let trace = s.trace;
     let drivenPath = s.drivenPath;
     let markPosition = s.markPosition;
@@ -297,20 +295,15 @@ export class MissionController {
     const pathLast = drivenPath[drivenPath.length - 1];
     if (!pathLast || distance(pathLast, rover) > 0.05) drivenPath = [...drivenPath, { x: rover.x, z: rover.z }];
 
-    if (plan.kind === 'MARK' && plan.accepted) {
-      const centerM = s.lidar?.level['0'].m ?? 0;
-      const d = dirFromBearing(rover.headingDeg);
-      markPosition = { x: rover.x + d.x * centerM, z: rover.z + d.z * centerM };
-      phase = phaseAfterExecution(phase, { markAccepted: true });
-    }
-    if (plan.kind === 'FOLLOW' && rover.currentNode === plan.targetNode) {
-      lastNodeId = plan.targetNode;
-      trace = [];
-      if (plan.label === 'EXTRACT' && plan.targetNode === 'BASE') phase = phaseAfterExecution(phase, { arrivedAtBase: true });
+    if (plan.kind === 'MARK') {
+      markPosition = { x: rover.x, z: rover.z };
+      phase = phaseAfterExecution(phase, { markRecorded: true });
+    } else if (phase === 'EXTRACT' && distance(rover, s.world.base) <= 1.5) {
+      phase = phaseAfterExecution(phase, { arrivedAtBase: true });
     }
     rover.phase = phase;
 
-    this.set({ rover, lastNodeId, trace, drivenPath, markPosition, lastResult: lastResult, exec: null, needsDecision: true, returnRoute: safeReturnPath(s.map, rover.currentNode ?? lastNodeId) });
+    this.set({ rover, trace, drivenPath, markPosition, lastResult, exec: null, needsDecision: true });
     this.feed('result', lastResult);
 
     if (phase === 'COMPLETE') this.finish('complete');
@@ -345,7 +338,6 @@ export class MissionController {
       previousAssessment: s.previousAssessment,
       pose: s.rover,
       atNode: at?.id ?? null,
-      lastNodeId: s.lastNodeId,
       lidar,
       map: s.map,
       lastResult: s.lastResult,
@@ -388,7 +380,7 @@ export class MissionController {
       await new Promise((r) => setTimeout(r, 200));
       this.inflight = false;
       if (this.s.status === 'idle') return; // reset while waiting
-      this.applyDecision(packet, next.decision, { thought: next.thought, latencyMs: next.latencyMs, tokens: { input: 0, output: 0, total: 0 }, source: 'replay' });
+      this.applyDecision(packet, next.decision, { thought: next.thought, model: next.model, latencyMs: next.latencyMs, tokens: { input: 0, output: 0, total: 0 }, source: 'replay' });
       return;
     }
 
@@ -409,6 +401,7 @@ export class MissionController {
       if (this.s.status === 'idle') return; // reset while waiting
       this.applyDecision(packet, parsed.data, {
         thought: json.thoughtSummary ?? '',
+        model: json.model ?? null,
         latencyMs: json.latencyMs ?? Math.round(performance.now() - t0),
         tokens: json.tokens ?? { input: 0, output: 0, total: 0 },
         source: json.source ?? 'gemini',
@@ -423,7 +416,7 @@ export class MissionController {
   private applyDecision(
     packet: ObservationPacket,
     decision: Decision,
-    meta: { thought: string; latencyMs: number; tokens: { input: number; output: number; total: number }; source: DecisionSource },
+    meta: { thought: string; model: string | null; latencyMs: number; tokens: { input: number; output: number; total: number }; source: DecisionSource },
   ) {
     const s = this.s;
     if (!s.world) return;
@@ -439,7 +432,7 @@ export class MissionController {
       trace: s.trace,
       minClearanceM: s.traceMinClearanceM,
     });
-    let map = applied.map;
+    const map = applied.map;
     let lastNodeId = s.lastNodeId;
     let trace = s.trace;
     let traceMinClearanceM = s.traceMinClearanceM;
@@ -456,30 +449,16 @@ export class MissionController {
     }
 
     // 2. phase from intent
-    let phase = derivePhase(s.rover.phase, decision);
+    const phase = derivePhase(s.rover.phase, decision);
 
-    // 3. plan the action (physics + the two protocol rules live in the executor)
+    // 3. execute Gemini's action; only the simulator enforces physical constraints.
     const rover = { ...s.rover, step, decisionsUsed, currentNode, phase };
-    const plan = planAction(decision, {
-      map,
-      rover,
-      trace,
-      lastNodeId,
-      previousAssessment: s.previousAssessment,
-      currentAssessment: decision.survivor_assessment,
-      lidar: packet.lidar,
-      phase,
-    });
-    if (plan.kind === 'FOLLOW' && plan.label === 'EXTRACT') {
-      phase = phaseAfterExecution(phase, { extractStarted: true });
-      rover.phase = phase;
-      map = { ...map, nodes: map.nodes.map((n) => (n.id === lastNodeId ? { ...n, visited: true } : n)) };
-    }
+    const plan = planAction(decision);
     const exec = startExecution(plan, rover);
 
     // 4. replay record
     const replayLog = s.replayLog
-      ? recordEntry(s.replayLog, { seed: s.seed, step, packetHash: hashPacket(packet), decision, thought: meta.thought, latencyMs: meta.latencyMs })
+      ? recordEntry(s.replayLog, { seed: s.seed, step, packetHash: hashPacket(packet), decision, thought: meta.thought, model: meta.model, latencyMs: meta.latencyMs })
       : s.replayLog;
 
     const keepPaused = this.s.status === 'paused';
@@ -498,10 +477,10 @@ export class MissionController {
       lastTokens: meta.tokens,
       totalTokens: s.totalTokens + meta.tokens.total,
       lastSource: meta.source,
+      lastModel: meta.model,
       previousAssessment: decision.survivor_assessment,
       decisions: [...s.decisions, decision],
       replayLog,
-      returnRoute: safeReturnPath(map, currentNode ?? lastNodeId),
       error: null,
     });
 
@@ -509,15 +488,13 @@ export class MissionController {
     const actionText =
       a.type === 'MOVE'
         ? `MOVE turn ${a.turn_deg ?? 0}°, ${a.distance_m ?? 0} m`
-        : a.type === 'GOTO_NODE'
-          ? `GOTO_NODE ${a.node_id ?? '?'}`
-          : a.type;
+        : a.type;
     if (meta.thought) this.feed('thought', meta.thought, { thought: meta.thought, source: meta.source });
-    this.feed('decision', `[${decision.intent}] ${decision.brief_reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, source: meta.source });
+    this.feed('decision', `[${decision.intent}] ${decision.brief_reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
     if (applied.nodeHereId && decision.map_update.node_here) {
       this.feed('system', `Declared ${applied.nodeHereId} (${decision.map_update.node_here.kind})${applied.edgeId ? `, closed edge ${applied.edgeId}` : ''}.`);
     }
-    // MARK / REJECT plans have no motion: resolve them now so last_result is reported and
+    // MARK plans have no motion: resolve them now so last_result is reported and
     // the loop asks for the next decision instead of stalling on a DONE executor.
     if (exec.stage === 'DONE') {
       const r = tickExecution(exec, rover, s.world, this.dyn(), 0);

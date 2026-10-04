@@ -52,7 +52,7 @@ export default function ManualConsole({ className = '' }: { className?: string }
           action: { type: 'MOVE', turn_deg: 45, distance_m: 10 },
         }),
       },
-      { label: 'GOTO BASE', d: template({ intent: 'FOLLOW_KNOWN_ROUTE', action: { type: 'GOTO_NODE', node_id: 'BASE' } }) },
+      { label: 'Return move (edit bearing)', d: template({ intent: 'RETURN_TO_BASE', action: { type: 'MOVE', turn_deg: 180, distance_m: 8 } }) },
       {
         label: 'CONFIRMED (no move)',
         d: template({
@@ -71,7 +71,6 @@ export default function ManualConsole({ className = '' }: { className?: string }
           action: { type: 'MARK_SURVIVOR' },
         }),
       },
-      { label: 'RETURN_TO_BASE', d: template({ intent: 'RETURN_TO_BASE', action: { type: 'RETURN_TO_BASE' } }) },
     ],
     [],
   );

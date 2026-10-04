@@ -15,6 +15,7 @@ import { GoogleGenAI } from '@google/genai';
 import { DECISION_BUDGET } from '../constants';
 import type { Decision, ObservationPacket, TerrainParams } from '../types';
 import { buildSystemInstruction, TERRAIN_INSTRUCTION } from './prompt';
+import { GEMINI_MODEL_PREFERENCE, modelFallbackReason, preferredAvailableModels, rememberUnavailableModel } from './modelRouting';
 import {
   DecisionJsonSchema,
   DecisionSchema,
@@ -22,11 +23,13 @@ import {
   TerrainParamsSchema,
 } from './schema';
 
-export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.8-flash';
+/** Free-tier Flash-Lite preference order: try the fastest/newest choice first. */
+export { GEMINI_MODEL_PREFERENCE };
 
 export interface GeminiDecideResult {
   decision: Decision;
   thoughtSummary: string;
+  model: string;
   latencyMs: number;
   tokens: { input: number; output: number; total: number };
   raw?: string;
@@ -58,31 +61,20 @@ interface InteractionLike {
   usage?: { total_input_tokens?: number; total_output_tokens?: number; total_tokens?: number };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function isRetryable(err: unknown): boolean {
-  const e = err as { status?: number; code?: number; message?: string };
-  const status = e?.status ?? e?.code;
-  if (typeof status === 'number') return status === 429 || status >= 500;
-  const msg = String(e?.message ?? '');
-  return /429|RESOURCE_EXHAUSTED|UNAVAILABLE|5\d\d|fetch failed|ECONNRESET/i.test(msg);
+function errorText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }
 
-/** Exponential backoff on 429/5xx (plan §3f). */
-async function withBackoff<T>(fn: () => Promise<T>, attempts = 4, baseMs = 800): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      if (!isRetryable(err) || i === attempts - 1) throw err;
-      const delay = baseMs * 2 ** i + Math.random() * 250;
-      console.warn(`[gemini] retryable error, backing off ${Math.round(delay)}ms:`, (err as Error)?.message);
-      await sleep(delay);
-    }
-  }
-  throw lastErr;
+function combinedFailure(message: string, providerError: unknown, keepProviderStatus: boolean): Error {
+  const error = new Error(message);
+  const status = (providerError as { status?: unknown })?.status;
+  if (keepProviderStatus && typeof status === 'number') Object.assign(error, { status });
+  return error;
 }
 
 function extractThoughtSummary(interaction: InteractionLike): string {
@@ -118,21 +110,20 @@ function stripFences(s: string): string {
 }
 
 async function structuredCall(args: {
+  model: string;
   system: string;
   input: Array<ImageInput | TextInput>;
   schema: Record<string, unknown>;
 }): Promise<{ text: string; thought: string; tokens: GeminiDecideResult['tokens'] }> {
   const ai = getClient();
-  const interaction = (await withBackoff(() =>
-    ai.interactions.create({
-      model: GEMINI_MODEL,
-      system_instruction: args.system,
-      input: args.input,
-      response_format: { type: 'text', mime_type: 'application/json', schema: args.schema },
-      generation_config: { thinking_level: 'low', thinking_summaries: 'auto' },
-      store: false,
-    }),
-  )) as unknown as InteractionLike;
+  const interaction = (await ai.interactions.create({
+    model: args.model,
+    system_instruction: args.system,
+    input: args.input,
+    response_format: { type: 'text', mime_type: 'application/json', schema: args.schema },
+    generation_config: { thinking_level: 'low', thinking_summaries: 'auto' },
+    store: false,
+  })) as unknown as InteractionLike;
   return {
     text: stripFences(extractOutputText(interaction)),
     thought: extractThoughtSummary(interaction),
@@ -141,8 +132,8 @@ async function structuredCall(args: {
 }
 
 /**
- * One decision: images + packet → Decision. One retry on parse failure with the
- * zod error appended to the input (plan §3f). No local decision is ever substituted.
+ * Each preferred model gets at most one schema-correction call. Model-specific
+ * quota/availability failures advance to the next preference; other failures stop.
  */
 export async function geminiDecide(
   packet: ObservationPacket,
@@ -159,50 +150,115 @@ export async function geminiDecide(
   ];
 
   let lastError = '';
+  let lastModelError: unknown;
+  let lastFailureWasModelError = false;
   let tokens = { input: 0, output: 0, total: 0 };
   let thought = '';
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const input =
-      attempt === 0
-        ? baseInput
-        : [...baseInput, { type: 'text' as const, text: `Your previous output failed validation: ${lastError}. Return JSON matching the schema exactly.` }];
-    const res = await structuredCall({ system, input, schema: DecisionJsonSchema as unknown as Record<string, unknown> });
-    tokens = { input: tokens.input + res.tokens.input, output: tokens.output + res.tokens.output, total: tokens.total + res.tokens.total };
-    thought = res.thought || thought;
-    try {
-      const parsed = DecisionSchema.safeParse(JSON.parse(res.text));
-      if (parsed.success) {
-        return { decision: parsed.data, thoughtSummary: thought, latencyMs: Date.now() - t0, tokens, raw: res.text };
+  const models = preferredAvailableModels();
+  if (models.length === 0) throw new Error('No configured Gemini Flash-Lite model is available; restart the server to retry model discovery.');
+  for (const model of models) {
+    let correction = '';
+    let unavailableError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const input =
+        attempt === 0
+          ? baseInput
+          : [...baseInput, { type: 'text' as const, text: `Your previous output failed validation: ${correction}. Return JSON matching the schema exactly.` }];
+      let res: Awaited<ReturnType<typeof structuredCall>>;
+      try {
+        res = await structuredCall({ model, system, input, schema: DecisionJsonSchema as unknown as Record<string, unknown> });
+      } catch (err) {
+        if (!modelFallbackReason(err, model)) throw err;
+        unavailableError = err;
+        break;
       }
-      lastError = parsed.error.message.slice(0, 600);
-    } catch (e) {
-      lastError = `invalid JSON: ${(e as Error).message}`.slice(0, 600);
+      tokens = { input: tokens.input + res.tokens.input, output: tokens.output + res.tokens.output, total: tokens.total + res.tokens.total };
+      thought = res.thought || thought;
+      try {
+        const parsed = DecisionSchema.safeParse(JSON.parse(res.text));
+        if (parsed.success) {
+          return { decision: parsed.data, thoughtSummary: thought, model, latencyMs: Date.now() - t0, tokens, raw: res.text };
+        }
+        correction = parsed.error.message.slice(0, 600);
+      } catch (err) {
+        correction = `invalid JSON: ${errorText(err)}`.slice(0, 600);
+      }
+      console.warn(`[gemini] ${model} decision parse failure (attempt ${attempt + 1}): ${correction}`);
     }
-    console.warn(`[gemini] decision parse failure (attempt ${attempt + 1}): ${lastError}`);
+    if (unavailableError) {
+      lastModelError = unavailableError;
+      lastFailureWasModelError = true;
+      if (modelFallbackReason(unavailableError, model) === 'model unavailable to this API/project') rememberUnavailableModel(model);
+      console.warn(`[gemini] ${model} unavailable (${modelFallbackReason(unavailableError, model)}); trying next preference`);
+    } else if (correction) {
+      lastError = `${model}: ${correction}`;
+      lastFailureWasModelError = false;
+    }
+  }
+  if (lastModelError && !lastError) throw lastModelError;
+  if (lastModelError) {
+    throw combinedFailure(
+    `No preferred Gemini model returned a valid decision. Last model error: ${errorText(lastModelError)}; output error: ${lastError}`,
+    lastModelError,
+    lastFailureWasModelError,
+    );
   }
   throw new Error(`Gemini returned unparseable output twice: ${lastError}`);
 }
 
 /** Terrain chat: sentence → TerrainParams (plan §4). */
-export async function geminiTerrain(prompt: string, current?: TerrainParams): Promise<{ params: TerrainParams; latencyMs: number }> {
+export async function geminiTerrain(prompt: string, current?: TerrainParams): Promise<{ params: TerrainParams; model: string; latencyMs: number }> {
   const t0 = Date.now();
   const input: TextInput[] = [
     { type: 'text', text: `Current params: ${JSON.stringify(current ?? {})}\nOperator: ${prompt}` },
   ];
   let lastError = '';
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await structuredCall({
-      system: TERRAIN_INSTRUCTION,
-      input: attempt === 0 ? input : [...input, { type: 'text', text: `Previous output failed validation: ${lastError}` }],
-      schema: TerrainParamsJsonSchema as unknown as Record<string, unknown>,
-    });
-    try {
-      const parsed = TerrainParamsSchema.safeParse(JSON.parse(res.text));
-      if (parsed.success) return { params: parsed.data, latencyMs: Date.now() - t0 };
-      lastError = parsed.error.message.slice(0, 400);
-    } catch (e) {
-      lastError = `invalid JSON: ${(e as Error).message}`;
+  let lastModelError: unknown;
+  let lastFailureWasModelError = false;
+  const models = preferredAvailableModels();
+  if (models.length === 0) throw new Error('No configured Gemini Flash-Lite model is available; restart the server to retry model discovery.');
+  for (const model of models) {
+    let correction = '';
+    let unavailableError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let res: Awaited<ReturnType<typeof structuredCall>>;
+      try {
+        res = await structuredCall({
+          model,
+          system: TERRAIN_INSTRUCTION,
+          input: attempt === 0 ? input : [...input, { type: 'text', text: `Previous output failed validation: ${correction}` }],
+          schema: TerrainParamsJsonSchema as unknown as Record<string, unknown>,
+        });
+      } catch (err) {
+        if (!modelFallbackReason(err, model)) throw err;
+        unavailableError = err;
+        break;
+      }
+      try {
+        const parsed = TerrainParamsSchema.safeParse(JSON.parse(res.text));
+        if (parsed.success) return { params: parsed.data, model, latencyMs: Date.now() - t0 };
+        correction = parsed.error.message.slice(0, 400);
+      } catch (err) {
+        correction = `invalid JSON: ${errorText(err)}`;
+      }
     }
+    if (unavailableError) {
+      lastModelError = unavailableError;
+      lastFailureWasModelError = true;
+      if (modelFallbackReason(unavailableError, model) === 'model unavailable to this API/project') rememberUnavailableModel(model);
+      console.warn(`[gemini] ${model} unavailable (${modelFallbackReason(unavailableError, model)}); trying next preference`);
+    } else if (correction) {
+      lastError = `${model}: ${correction}`;
+      lastFailureWasModelError = false;
+    }
+  }
+  if (lastModelError && !lastError) throw lastModelError;
+  if (lastModelError) {
+    throw combinedFailure(
+      `No preferred Gemini model returned valid terrain. Last model error: ${errorText(lastModelError)}; output error: ${lastError}`,
+      lastModelError,
+      lastFailureWasModelError,
+    );
   }
   throw new Error(`Gemini terrain output unparseable: ${lastError}`);
 }

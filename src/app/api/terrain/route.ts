@@ -34,10 +34,12 @@ export async function POST(req: Request) {
   }
   try {
     const r = await geminiTerrain(body.prompt, current);
-    return NextResponse.json({ params: r.params, source: 'gemini', latencyMs: r.latencyMs });
+    return NextResponse.json({ params: r.params, source: 'gemini', model: r.model, latencyMs: r.latencyMs });
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
     console.error('[api/terrain] gemini failure:', msg);
-    return NextResponse.json({ error: msg, source: 'gemini' }, { status: 502 });
+    const rawStatus = Number((e as { status?: unknown; code?: unknown })?.status ?? (e as { code?: unknown })?.code);
+    const status = rawStatus >= 400 && rawStatus <= 599 ? rawStatus : /429|RESOURCE_EXHAUSTED/.test(msg) ? 429 : 502;
+    return NextResponse.json({ error: msg, source: 'gemini' }, { status });
   }
 }

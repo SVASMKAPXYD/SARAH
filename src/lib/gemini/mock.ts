@@ -2,11 +2,8 @@
  * P2 — deterministic mock decider. Produces a valid Decision from the packet ALONE
  * (it never sees ground truth) so the P1/P3/P4 loop runs without a Gemini key.
  *
- * Behaviour: steer toward the clearest LiDAR column, declare a VIEWPOINT every few
- * steps (DEAD_END when blocked), add a frontier for other open columns, occasionally
- * GOTO_NODE to exercise path following. It never marks a survivor, so a mock mission
- * ends by budget exhaustion — that is expected; use the manual console for MARK_SURVIVOR.
- * Once the packet reports phase RESCUE (after a manual mark) it issues RETURN_TO_BASE.
+ * This deliberately simple offline fixture steers toward the clearest LiDAR column and
+ * declares occasional map memory. It is not a substitute for Gemini's navigation policy.
  */
 import { LIDAR_COLUMN_KEYS, LIDAR_MAX_M, MAX_MOVE_M } from '../constants';
 import { normDeg } from '../geo';
@@ -29,21 +26,6 @@ export function mockDecide(packet: ObservationPacket): Decision {
   const heading = packet.pose.heading_deg;
   const blocked = /^BLOCKED/.test(packet.last_result);
   const nodes = packet.map.nodes;
-
-  // After an accepted MARK_SURVIVOR (packet says phase RESCUE/EXTRACT) the only sensible
-  // move is extraction. Still packet-only: the mock reads the phase, not ground truth.
-  if (packet.mission.phase === 'RESCUE' || packet.mission.phase === 'EXTRACT') {
-    return {
-      observations: 'Mock: survivor marked; extracting along the mapped route.',
-      map_update: { node_here: null, new_frontiers: [], frontier_updates: [], edge_annotation: null },
-      survivor_assessment: packet.mission.previous_assessment,
-      evidence: { thermal: 1, rgb_person: 1, bearing_deg: 0 },
-      intent: 'RETURN_TO_BASE',
-      action: { type: 'RETURN_TO_BASE' },
-      confidence: 0.9,
-      brief_reason: 'The survivor is marked, so I return to base along the edges I have driven.',
-    };
-  }
 
   // Stuck against something the thin LiDAR rays do not see (body-width contact): turn to look.
   const stuck = blocked && /after 0\.0 m/.test(packet.last_result);
@@ -73,22 +55,6 @@ export function mockDecide(packet: ObservationPacket): Decision {
     .sort((a, b) => b.s - a.s);
   const best = ranked[0];
   const bestM = packet.lidar.level[best.k].m ?? LIDAR_MAX_M;
-
-  // Occasionally backtrack to a known node (exercises GOTO_NODE + Dijkstra).
-  const otherNodes = nodes.filter((n) => n.id !== packet.pose.at_node && n.distance_m > 3);
-  if (step > 0 && step % 9 === 0 && otherNodes.length > 0 && !blocked) {
-    const target = otherNodes[(step / 9) % otherNodes.length];
-    return {
-      observations: `Mock: all nearby columns read ${Math.round(best.s)} m or less; revisiting ${target.id} for a second look.`,
-      map_update: { node_here: null, new_frontiers: [], frontier_updates: [], edge_annotation: null },
-      survivor_assessment: 'NO_EVIDENCE',
-      evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
-      intent: 'FOLLOW_KNOWN_ROUTE',
-      action: { type: 'GOTO_NODE', node_id: target.id },
-      confidence: 0.5,
-      brief_reason: `I am backtracking to ${target.id} along edges I have already driven.`,
-    };
-  }
 
   // Everything close: turn in place to look around.
   if (best.s < 3) {

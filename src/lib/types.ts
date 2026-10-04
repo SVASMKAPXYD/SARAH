@@ -25,8 +25,6 @@ export interface TopoNode {
   lastAssessment?: Assessment;
   thermalScore?: number;
   rgbPersonScore?: number;
-  /** Consecutive observations at this node with assessment ≥ LIKELY. */
-  evidenceFrames?: number;
 }
 
 export interface TopoEdge {
@@ -117,6 +115,8 @@ export interface PacketNode {
   visited: boolean;
   note?: string;
   last_assessment?: Assessment;
+  thermal_score?: number;
+  rgb_person_score?: number;
   bearing_from_rover_deg: number;
   distance_m: number;
 }
@@ -148,7 +148,6 @@ export interface ObservationPacket {
     step: number;
     decisions_remaining: number;
     distance_traveled_m: number;
-    safe_return_path: string[];
     previous_assessment: Assessment;
   };
   pose: { x: number; z: number; heading_deg: number; at_node: string | null };
@@ -188,6 +187,7 @@ export interface DecideRequest {
 export interface DecideResponse {
   decision: Decision;
   thoughtSummary: string;
+  model: string | null;
   latencyMs: number;
   tokens: { input: number; output: number; total: number };
   source: 'gemini' | 'mock';
@@ -203,6 +203,7 @@ export interface ReplayEntry {
   packetHash: string;
   decision: Decision;
   thought: string;
+  model: string | null;
   latencyMs: number;
 }
 
@@ -246,5 +247,6 @@ export interface FeedEntry {
   decision?: Decision;
   thought?: string;
   latencyMs?: number;
+  model?: string | null;
   source?: DecideResponse['source'] | 'manual' | 'replay';
 }

@@ -31,7 +31,6 @@ function actionLabel(d: Decision): string {
     const turn = a.turn_deg ?? 0;
     return `MOVE  turn ${turn >= 0 ? '+' : ''}${turn}°  ·  ${a.distance_m ?? 0} m`;
   }
-  if (a.type === 'GOTO_NODE') return `GOTO_NODE  ${a.node_id ?? '?'}`;
   return a.type;
 }
 
@@ -124,7 +123,7 @@ export default function AgentPanel({ className = '' }: { className?: string }) {
             </Row>
             {thought && (
               <Row label="Thought">
-                <span className="text-zinc-400">{thought}</span>
+                <span className="text-zinc-400">Optional Gemini thinking summary: {thought}</span>
               </Row>
             )}
             <Row label="Last result">

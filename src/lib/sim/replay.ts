@@ -36,6 +36,7 @@ export function parseReplay(json: unknown): ReplayLog {
       packetHash: String(entry.packetHash ?? ''),
       decision: DecisionSchema.parse(entry.decision),
       thought: String(entry.thought ?? ''),
+      model: typeof entry.model === 'string' ? entry.model : null,
       latencyMs: Number(entry.latencyMs ?? 0),
     };
   });
@@ -56,12 +57,12 @@ export class ReplayPlayer {
   get remaining(): number {
     return this.log.entries.length - this.index;
   }
-  next(packet: ObservationPacket): { decision: Decision; thought: string; latencyMs: number; diverged: boolean } | null {
+  next(packet: ObservationPacket): { decision: Decision; thought: string; model: string | null; latencyMs: number; diverged: boolean } | null {
     const e = this.log.entries[this.index];
     if (!e) return null;
     this.index++;
     const diverged = e.packetHash !== '' && e.packetHash !== hashPacket(packet);
-    return { decision: e.decision, thought: e.thought, latencyMs: e.latencyMs, diverged };
+    return { decision: e.decision, thought: e.thought, model: e.model, latencyMs: e.latencyMs, diverged };
   }
   reset() {
     this.index = 0;

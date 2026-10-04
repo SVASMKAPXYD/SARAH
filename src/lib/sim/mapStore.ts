@@ -138,7 +138,6 @@ export function updateFrontiers(map: MapState, updates: MapUpdate['frontier_upda
 
 /** Attach Gemini's own assessment/evidence to a node (plan §3d "Evidence"). */
 export function attachEvidence(map: MapState, nodeId: string, assessment: Assessment, evidence: Decision['evidence']): MapState {
-  const rank: Record<Assessment, number> = { NO_EVIDENCE: 0, POSSIBLE: 1, LIKELY: 2, CONFIRMED_CANDIDATE: 3 };
   return {
     ...map,
     nodes: map.nodes.map((n) =>
@@ -148,7 +147,6 @@ export function attachEvidence(map: MapState, nodeId: string, assessment: Assess
             lastAssessment: assessment,
             thermalScore: evidence.thermal,
             rgbPersonScore: evidence.rgb_person,
-            evidenceFrames: rank[assessment] >= rank.LIKELY ? (n.evidenceFrames ?? 0) + 1 : 0,
           }
         : n,
     ),

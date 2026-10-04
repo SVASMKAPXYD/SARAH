@@ -20,6 +20,7 @@ export default function MetricsStrip({ className = '' }: { className?: string })
   const budget = useMissionStore((s) => s.budget);
   const dist = useMissionStore((s) => s.distanceTraveledM);
   const latency = useMissionStore((s) => s.lastLatencyMs);
+  const model = useMissionStore((s) => s.lastModel);
   const lastTokens = useMissionStore((s) => s.lastTokens);
   const totalTokens = useMissionStore((s) => s.totalTokens);
   const nodes = useMissionStore((s) => s.map.nodes.length);
@@ -33,6 +34,7 @@ export default function MetricsStrip({ className = '' }: { className?: string })
       <Metric label="Decisions" value={`${used} / ${budget}`} sub={`${Math.max(0, budget - used)} left`} />
       <Metric label="Distance" value={`${dist.toFixed(1)} m`} />
       <Metric label="Latency" value={latency === null ? '—' : `${latency} ms`} />
+      <Metric label="Model" value={model ?? '—'} />
       <Metric label="Tokens" value={lastTokens ? String(lastTokens.total) : '—'} sub={`Σ ${totalTokens}`} />
       <Metric label="Map" value={`${nodes} n`} sub={`${frontiers} open`} />
     </div>

@@ -1,8 +1,8 @@
 'use client';
 /**
  * P1/P4 — top-down SVG minimap of the map GEMINI authored (plan §2 "UI", §3d):
- * BASE + declared nodes, recorded edges, frontiers as arrows at their bearing, the current
- * safe return route highlighted, the rover with its 90° FOV wedge and the partial trace.
+ * BASE + declared nodes, recorded edges, frontiers as arrows at their bearing, the rover
+ * with its 90° FOV wedge and the partial trace.
  * With `revealTruth` (after the mission ends) the true trails, water, survivor and animals
  * are drawn underneath so judges can compare Gemini's map with the world.
  *
@@ -29,7 +29,6 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
   const rover = useMissionStore((s) => s.rover);
   const trace = useMissionStore((s) => s.trace);
   const lastNodeId = useMissionStore((s) => s.lastNodeId);
-  const returnRoute = useMissionStore((s) => s.returnRoute);
   const markPosition = useMissionStore((s) => s.markPosition);
   const world = useMissionStore((s) => s.world);
   const animals = useMissionStore((s) => s.animals);
@@ -57,12 +56,6 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
   }, [map.nodes, rover.x, rover.z, revealTruth, world]);
 
   const nodeById = useMemo(() => new Map(map.nodes.map((n) => [n.id, n])), [map.nodes]);
-  const routeEdges = useMemo(() => {
-    const set = new Set<string>();
-    for (let i = 1; i < returnRoute.length; i++) set.add(`${returnRoute[i - 1]}|${returnRoute[i]}`);
-    return set;
-  }, [returnRoute]);
-
   const u = view.span / size; // world meters per CSS px
   const fs = 11 * u;
   const r = 1.6 * u;
@@ -111,15 +104,14 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
 
         {/* edges */}
         {map.edges.map((e) => {
-          const onRoute = routeEdges.has(`${e.from}|${e.to}`) || routeEdges.has(`${e.to}|${e.from}`);
           return (
             <polyline
               key={e.id}
               points={e.polyline.map((p) => `${p.x},${p.z}`).join(' ')}
               fill="none"
-              stroke={onRoute ? '#22d3ee' : e.safe ? '#a1a1aa' : '#7f1d1d'}
-              strokeWidth={(onRoute ? 2.2 : 1.2) * u}
-              strokeOpacity={onRoute ? 1 : 0.8}
+              stroke={e.safe ? '#a1a1aa' : '#7f1d1d'}
+              strokeWidth={1.2 * u}
+              strokeOpacity={0.8}
               strokeLinejoin="round"
               strokeLinecap="round"
             />
@@ -162,7 +154,7 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
 
         {/* nodes */}
         {map.nodes.map((n) => (
-          <NodeGlyph key={n.id} n={n} r={r} fs={fs} highlight={returnRoute.includes(n.id)} />
+          <NodeGlyph key={n.id} n={n} r={r} fs={fs} />
         ))}
 
         {/* mark */}
@@ -194,17 +186,15 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
         <Legend color="#c7d2fe" label="viewpoint" />
         <Legend color="#f87171" label="dead end" />
         <Legend color="#f59e0b" label="frontier" />
-        <Legend color="#22d3ee" label="return route" />
       </div>
     </div>
   );
 }
 
-function NodeGlyph({ n, r, fs, highlight }: { n: TopoNode; r: number; fs: number; highlight: boolean }) {
+function NodeGlyph({ n, r, fs }: { n: TopoNode; r: number; fs: number }) {
   const color = NODE_COLOR[n.kind];
   return (
     <g transform={`translate(${n.x} ${n.z})`}>
-      {highlight && <circle r={r * 1.9} fill="none" stroke="#22d3ee" strokeWidth={r * 0.25} strokeOpacity={0.8} />}
       <circle r={n.kind === 'BASE' ? r * 1.4 : r} fill={color} stroke="#09090b" strokeWidth={r * 0.25} opacity={n.visited ? 1 : 0.6} />
       <text y={-r * 1.6} textAnchor="middle" fontSize={fs} fill={color} style={{ paintOrder: 'stroke' }} stroke="#09090b" strokeWidth={fs * 0.18}>
         {n.id}

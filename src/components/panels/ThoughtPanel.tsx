@@ -15,7 +15,26 @@ type ThoughtTab = 'transcript' | 'graph';
 type Line = { id: string; t: number; kind: string; text: string };
 
 function feedText(e: FeedEntry): string {
-  if (e.kind === 'decision' && e.decision?.brief_reason) return e.decision.brief_reason;
+  if (e.kind === 'decision' && e.decision) {
+    const d = e.decision;
+    const action = d.action.type === 'MOVE'
+      ? `MOVE ${d.action.turn_deg ?? 0}° / ${d.action.distance_m ?? 0} m`
+      : d.action.type;
+    const updates = [
+      d.map_update.node_here ? `${d.map_update.node_here.kind} node (${d.map_update.node_here.note})` : '',
+      ...d.map_update.new_frontiers.map((f) => `frontier ${f.bearing_deg}° / ${f.estimated_distance_m} m`),
+      ...d.map_update.frontier_updates.map((f) => `${f.id} → ${f.status}`),
+      d.map_update.edge_annotation ? `edge ${d.map_update.edge_annotation.terrain}, hazard ${d.map_update.edge_annotation.hazard_cost}` : '',
+    ].filter(Boolean);
+    return [
+      `Observations: ${d.observations}`,
+      `Assessment: ${d.survivor_assessment}; intent: ${d.intent}`,
+      `Evidence: thermal ${d.evidence.thermal}; RGB person ${d.evidence.rgb_person}; bearing ${d.evidence.bearing_deg ?? 'none'}`,
+      `Map update: ${updates.length ? updates.join('; ') : 'none'}`,
+      `Action: ${action}. Reason: ${d.brief_reason}`,
+      e.model ? `Model: ${e.model}` : '',
+    ].filter(Boolean).join('\n');
+  }
   if (e.kind === 'thought' && e.thought) return e.thought;
   return e.text;
 }
@@ -23,7 +42,7 @@ function feedText(e: FeedEntry): string {
 function derivedStatus(s: MissionState): string {
   const r = s.rover;
   const result = s.lastResult.trim();
-  if (/^(MOVED|BLOCKED|TURNED|GOTO_NODE|RETURN_TO_BASE|MARK_)/i.test(result)) return result;
+  if (/^(MOVED|BLOCKED|TURNED|MARK_)/i.test(result)) return result;
   if (s.status === 'waiting_for_gemini') return `${r.phase} · waiting at step ${r.step}`;
   return `${r.phase} · step ${r.step} · ${s.distanceTraveledM.toFixed(0)} m traveled`;
 }
@@ -49,6 +68,7 @@ export default function ThoughtPanel() {
   const [tab, setTab] = useState<ThoughtTab>('transcript');
   const [derived, setDerived] = useState<Line[]>([]);
   const scroller = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
 
   const prevFeedLen = useRef(feed.length);
   useEffect(() => {
@@ -89,7 +109,6 @@ export default function ThoughtPanel() {
     return [...fromFeed, ...derived].sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
   }, [feed, derived]);
 
-  const tail = lines[lines.length - 1]?.id;
   useEffect(() => {
     if (tab !== 'transcript') return;
     const el = scroller.current;
@@ -100,7 +119,20 @@ export default function ThoughtPanel() {
     pin();
     const id = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(id);
-  }, [tail, tab]);
+  }, [lines, tab]);
+
+  useEffect(() => {
+    if (tab !== 'transcript') return;
+    const contentEl = content.current;
+    if (!contentEl) return;
+
+    const observer = new ResizeObserver(() => {
+      const el = scroller.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [tab]);
 
   const waiting = status === 'waiting_for_gemini';
 
@@ -146,10 +178,10 @@ export default function ThoughtPanel() {
           ref={scroller}
           className="absolute inset-0 overflow-y-auto px-3 pb-2"
         >
-          <div role="log" aria-label="Thought transcript">
+          <div ref={content} role="log" aria-label="Thought transcript">
             {lines.length === 0 && <p className="py-6 text-center text-sm text-slate-500">Thoughts will show up here during a run.</p>}
             {lines.map((line) => (
-              <p key={line.id} className={`border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
+              <p key={line.id} className={`whitespace-pre-line border-t border-slate-400/25 py-1.5 text-[13px] leading-snug first:border-t-0 ${TONE[line.kind] ?? 'text-slate-800'}`}>
                 {line.text}
               </p>
             ))}

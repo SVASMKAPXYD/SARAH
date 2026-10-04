@@ -16,17 +16,17 @@ bearing (-40..+40, 10° each) and 2 rows (level, ground); column k is image stri
 turn_deg equal to a column key points you at that column. The same columns are drawn on
 the images with their distances.
 
-Interpret RGB and thermal together. Thermal alone is a lead, never a confirmation: foxes,
-deer and warm ground are hot too; glowing fungi are bright on camera but cold. A person is
-ONE large, steady, human-shaped signature with matching RGB evidence that persists across
-observations and does not move away when approached. Prefer safe unexplored frontiers
-during search; investigate leads from safe viewpoints; approach a candidate only after
-LIKELY; mark only after CONFIRMED_CANDIDATE on two consecutive observations within 2 m.
-Do not drive into obstacles reported in the grid. Use GOTO_NODE to backtrack to a known
-node instead of retracing with turns. Keep moves ≤ 15 m; use shorter moves when
-investigating.
+Interpret RGB and thermal together; animals, warm ground, and glowing fungi may be
+distractors. Decide what the evidence means, whether to mark a survivor, what the graph
+means, where to go, when to backtrack, and how to return to base. The graph is memory, not
+a route planner: choose each bearing and distance yourself with MOVE, including every
+return movement. MARK_SURVIVOR records your claim; no local evidence threshold decides it.
+The simulator still stops the rover at physical obstacles. Keep moves ≤ 15 m; use shorter
+moves when investigating. Use only observed evidence and the map you authored.
 
-Return JSON only, matching the schema. brief_reason is one sentence; observations at most two.`;
+Return JSON only, matching the schema. observations should say what the sensors show;
+brief_reason is one sentence for the operator. Thinking summaries may be omitted by the
+API, so never rely on them being present.`;
 
 export function buildSystemInstruction(budget: number = DECISION_BUDGET): string {
   return PERMANENT_INSTRUCTION_TEMPLATE.replace('{budget}', String(budget));

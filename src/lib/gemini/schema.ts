@@ -18,7 +18,7 @@ export const IntentSchema = z.enum([
   'MARK_SURVIVOR',
   'RETURN_TO_BASE',
 ]);
-export const ActionTypeSchema = z.enum(['MOVE', 'GOTO_NODE', 'MARK_SURVIVOR', 'RETURN_TO_BASE']);
+export const ActionTypeSchema = z.enum(['MOVE', 'MARK_SURVIVOR']);
 
 export const MapUpdateSchema = z.object({
   node_here: z.object({ kind: NodeKindSchema, note: z.string() }).nullable(),
@@ -34,12 +34,10 @@ export const MapUpdateSchema = z.object({
   edge_annotation: z.object({ terrain: TerrainKindSchema, hazard_cost: z.number() }).nullable(),
 });
 
-export const ActionSchema = z.object({
-  type: ActionTypeSchema,
-  turn_deg: z.number().optional(),
-  distance_m: z.number().optional(),
-  node_id: z.string().optional(),
-});
+export const ActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('MOVE'), turn_deg: z.number(), distance_m: z.number() }),
+  z.object({ type: z.literal('MARK_SURVIVOR') }),
+]);
 
 export const DecisionSchema = z.object({
   observations: z.string(),
@@ -141,10 +139,9 @@ export const DecisionJsonSchema = {
     action: {
       type: 'object',
       properties: {
-        type: { type: 'string', enum: ['MOVE', 'GOTO_NODE', 'MARK_SURVIVOR', 'RETURN_TO_BASE'] },
+        type: { type: 'string', enum: ['MOVE', 'MARK_SURVIVOR'] },
         turn_deg: { type: 'number', description: 'MOVE only, -180..180, positive = right.' },
         distance_m: { type: 'number', description: 'MOVE only, 0..15. 0 = turn in place to look.' },
-        node_id: { type: 'string', description: 'GOTO_NODE only; must be a node id in the map.' },
       },
       required: ['type'],
     },

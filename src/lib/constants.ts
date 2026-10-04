@@ -45,7 +45,6 @@ export const LIDAR_COLUMN_WIDTH_DEG = 10;
 export const LIDAR_ROWS = ['level', 'ground'] as const;
 
 // Mission
-export const RESCUE_RANGE_M = 2;
 export const DECISION_BUDGET = 40;
 export const GRADING_RADIUS_M = 3; // mark within this of the true survivor = correct
 export const SURVIVOR_MIN_DIST_FROM_BASE_M = 40;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { DECISION_BUDGET } from '@/lib/constants';
+import { GEMINI_MODEL_PREFERENCE } from '@/lib/gemini/modelRouting';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,7 +10,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     decider,
-    model: process.env.GEMINI_MODEL ?? 'gemini-3.8-flash',
+    modelPreference: GEMINI_MODEL_PREFERENCE,
     budget: DECISION_BUDGET,
     time: new Date().toISOString(),
   });

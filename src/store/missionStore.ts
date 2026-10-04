@@ -47,7 +47,6 @@ export interface MissionState {
   traceMinClearanceM: number;
   distanceTraveledM: number;
   exec: ExecState | null;
-  returnRoute: string[];
 
   // loop
   status: MissionStatus;
@@ -56,6 +55,7 @@ export interface MissionState {
   error: string | null;
   deciderMode: DeciderMode;
   lastSource: DecisionSource | null;
+  lastModel: string | null;
   budget: number;
 
   // decisions
@@ -98,7 +98,6 @@ export const useMissionStore = create<MissionState>(() => ({
   traceMinClearanceM: 30,
   distanceTraveledM: 0,
   exec: null,
-  returnRoute: ['BASE'],
 
   status: 'idle',
   pausedFrom: null,
@@ -106,6 +105,7 @@ export const useMissionStore = create<MissionState>(() => ({
   error: null,
   deciderMode: 'api',
   lastSource: null,
+  lastModel: null,
   budget: DECISION_BUDGET,
 
   lastDecision: null,
