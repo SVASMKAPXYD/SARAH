@@ -11,7 +11,7 @@ SARAH is a simulated night search rover. **Gemini is the search-and-navigation b
 | What to preserve in its memory and when to replace that memory. | Include the current memory text in the next independent request; keep no hidden model conversation. |
 | Whether an observation is enough to claim the survivor. | Record the mark and grade it against hidden truth after the run. |
 
-There is no local route planner, frontier selection, candidate ranking, evidence threshold, or automatic return. A graph is no longer Gemini's memory or an input to its decision. Local collision geometry is simulation physics, not navigation advice. The operator map shows the driven path and may reveal truth for evaluation; it is not sent to Gemini.
+There is no local route planner, frontier selection, candidate ranking, evidence threshold, or automatic return. A graph is no longer Gemini's memory or an input to its decision. Local collision geometry is simulation physics, not navigation advice. The operator map shows the driven path and an always-visible hiker location marker for operator guidance; other hidden truth may be revealed for evaluation. None of this map data is sent to Gemini.
 
 ## Per-turn contract
 
@@ -48,7 +48,7 @@ Advance only for model-unavailable (404), temporary model service unavailability
 
 Show the selected absolute bearing, distance, brief reason, exact simulator result, and the current memory text in the Agent panel. The operator-side Reasoning stream shows optional model-provided summaries, concise observation-focused decision rationales, and simulator feedback without duplicating movement coordinates; it is a timeline across independent turns, not context supplied to Gemini. Model summaries are not a full private chain-of-thought transcript. The Memory tab shows the full persistent text. Metrics show model, latency, tokens, distance, and memory length.
 
-Default to an immersive third-person rover view, with icon toggles for first/third person and RGB → thermal → depth, a resizable overhead operator map, and a layout toggle for the classic split view. First-person mode displays the aligned capture used by Gemini; third-person RGB/thermal remain live chase-camera renders, and third-person depth is a live hue-coded chase-camera render. The overhead operator map shows driven path, rover, mark, and optionally revealed hidden truth; it is not the model's graph or memory.
+Default to an immersive third-person rover view, with icon toggles for first/third person and RGB → thermal → depth, a resizable overhead operator map, and a layout toggle for the classic split view. First-person mode displays the aligned capture used by Gemini; third-person RGB/thermal remain live chase-camera renders, and third-person depth is a live hue-coded chase-camera render. Both overhead maps show the driven path, rover, mark, and an always-visible red hiker marker with expanding pulse rings; other hidden truth can be revealed for evaluation. The operator map is not the model's graph or memory.
 
 ## Current implementation map
 

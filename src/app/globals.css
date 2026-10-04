@@ -17,6 +17,31 @@
   opacity: 0.48;
 }
 
+.survivor-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: survivor-ping 2.2s ease-out infinite;
+}
+.survivor-ping-delayed {
+  animation-delay: -1.1s;
+}
+@keyframes survivor-ping {
+  from {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .survivor-ping {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

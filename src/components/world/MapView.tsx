@@ -177,6 +177,8 @@ function SurvivorBeacon({ world }: { world: World }) {
   const y = world.heightAt(x, z) + 0.45;
   return (
     <group position={[x, y, z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={5}>
+      <SurvivorPing phaseOffset={0} />
+      <SurvivorPing phaseOffset={0.5} />
       <mesh>
         <circleGeometry args={[1.35, 24]} />
         <meshBasicMaterial color="#0f172a" depthTest={false} toneMapped={false} />
@@ -186,6 +188,27 @@ function SurvivorBeacon({ world }: { world: World }) {
         <meshBasicMaterial color="#ef4444" depthTest={false} toneMapped={false} />
       </mesh>
     </group>
+  );
+}
+
+function SurvivorPing({ phaseOffset }: { phaseOffset: number }) {
+  const ringRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useFrame(({ clock }) => {
+    const progress = (clock.elapsedTime / 2.2 + phaseOffset) % 1;
+    const ring = ringRef.current;
+    const material = materialRef.current;
+    if (!ring || !material) return;
+    ring.scale.setScalar(0.7 + progress * 4);
+    material.opacity = 0.9 * (1 - progress);
+  });
+
+  return (
+    <mesh ref={ringRef} position={[0, 0, 0.02]} scale={0.7}>
+      <ringGeometry args={[0.85, 1.05, 32]} />
+      <meshBasicMaterial ref={materialRef} color="#ef4444" transparent opacity={0.9} depthTest={false} toneMapped={false} side={THREE.DoubleSide} />
+    </mesh>
   );
 }
 

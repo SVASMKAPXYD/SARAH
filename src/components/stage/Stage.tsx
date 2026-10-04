@@ -150,6 +150,24 @@ function ViewModeButtons({
   );
 }
 
+function MapPane({ chatOpen, onToggleChat }: { chatOpen: boolean; onToggleChat: () => void }) {
+  return (
+    <>
+      <MapView />
+      <button
+        type="button"
+        title="Describe how the landscape should change"
+        aria-label="Describe how the landscape should change"
+        aria-expanded={chatOpen}
+        onClick={onToggleChat}
+        className="absolute right-1.5 top-1.5 z-10 grid h-8 w-8 place-items-center rounded-full border border-slate-500 bg-white text-lg leading-none text-slate-800 shadow-sm hover:bg-slate-50"
+      >
+        +
+      </button>
+    </>
+  );
+}
+
 function IconButton({
   label,
   pressed,
@@ -239,6 +257,8 @@ export default function Stage() {
   const devConsole = useUIStore((s) => s.devConsole);
   const sensorView = useUIStore((s) => s.sensorView);
   const cycleSensorView = useUIStore((s) => s.cycleSensorView);
+  const mainView = useUIStore((s) => s.mainView);
+  const swapViews = useUIStore((s) => s.swapViews);
 
   const [layout, setLayout] = useState<'immersive' | 'classic'>('immersive');
   const [person, setPerson] = useState<PovPerson>('third');
@@ -367,17 +387,44 @@ export default function Stage() {
         >
           <div className="relative min-h-0 min-w-0" style={{ gridArea: 'side' }}>
             <div className="absolute inset-0 overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]">
-              <MapView />
-              <button type="button" title="Describe how the landscape should change" aria-label="Describe how the landscape should change" aria-expanded={chatOpen} onClick={() => setChatOpen((v) => !v)} className="absolute right-1.5 top-1.5 z-10 grid h-8 w-8 place-items-center rounded-full border border-slate-500 bg-white text-lg leading-none text-slate-800 shadow-sm hover:bg-slate-50">+</button>
+              {mainView === 'world' ? (
+                <>
+                  <PovView person={person} />
+                  {person === 'third' && sensorView === 'rgb' && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
+                  <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
+                    <ViewModeButtons person={person} sensorView={sensorView} cycleSensorView={cycleSensorView} setPerson={setPerson} />
+                  </div>
+                </>
+              ) : (
+                <MapPane chatOpen={chatOpen} onToggleChat={() => setChatOpen((v) => !v)} />
+              )}
             </div>
           </div>
           <div className="relative min-h-0 min-w-0" style={{ gridArea: 'main' }}>
             <div className="absolute inset-0 overflow-hidden rounded-md border border-[#8ea3b8] bg-[#d5e6f7]">
-              <PovView person={person} />
-              {person === 'third' && sensorView === 'rgb' && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
-              <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
-                <ViewModeButtons person={person} sensorView={sensorView} cycleSensorView={cycleSensorView} setPerson={setPerson} />
-              </div>
+              {mainView === 'world' ? (
+                <MapPane chatOpen={chatOpen} onToggleChat={() => setChatOpen((v) => !v)} />
+              ) : (
+                <>
+                  <PovView person={person} />
+                  {person === 'third' && sensorView === 'rgb' && <div className="pov-wash pointer-events-none absolute inset-0 z-[1]" />}
+                  <div className="absolute right-1.5 top-1.5 z-10 flex gap-1">
+                    <ViewModeButtons person={person} sensorView={sensorView} cycleSensorView={cycleSensorView} setPerson={setPerson} />
+                  </div>
+                </>
+              )}
+              <button
+                type="button"
+                aria-label={mainView === 'world' ? 'Make rover view the main view' : 'Make top-down map the main view'}
+                title={mainView === 'world' ? 'Swap: make rover view large' : 'Swap: make top-down map large'}
+                onClick={swapViews}
+                className="absolute bottom-2 right-2 z-10 grid h-8 w-8 place-items-center rounded border border-slate-500 bg-white/95 text-lg text-slate-800 shadow-sm hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-800"
+              >
+                <Icon>
+                  <path d="m6 6 5 5m-5-1v-4h4" />
+                  <path d="m18 18-5-5m5 1v4h-4" />
+                </Icon>
+              </button>
             </div>
           </div>
           <div className="relative min-h-0 min-w-0" style={{ gridArea: 'thought' }}>

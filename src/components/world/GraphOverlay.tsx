@@ -13,7 +13,7 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
 
   const view = useMemo(() => {
     const points = [...drivenPath, { x: rover.x, z: rover.z }];
-    if (revealTruth && world) points.push(world.truth.survivor);
+    if (world) points.push(world.truth.survivor);
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -26,7 +26,7 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
     }
     const span = Math.max(50, maxX - minX + 28, maxZ - minZ + 28);
     return { x: (minX + maxX - span) / 2, z: (minZ + maxZ - span) / 2, span };
-  }, [drivenPath, rover.x, rover.z, revealTruth, world]);
+  }, [drivenPath, rover.x, rover.z, world]);
 
   const u = view.span / size;
   const half = WORLD_HALF_SIZE_M;
@@ -48,7 +48,14 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
             {world.truth.trails.map((trail, index) => (
               <polyline key={index} points={trail.map((point) => `${point.x},${point.z}`).join(' ')} fill="none" stroke="#3f6212" strokeWidth={2.4} strokeOpacity={0.7} strokeLinejoin="round" strokeLinecap="round" />
             ))}
-            <circle cx={world.truth.survivor.x} cy={world.truth.survivor.z} r={1.4} fill="#4ade80" stroke="#052e16" strokeWidth={0.4} />
+          </g>
+        )}
+        {world && (
+          <g transform={`translate(${world.truth.survivor.x} ${world.truth.survivor.z})`}>
+            <title>Hiker location</title>
+            <circle className="survivor-ping" r={2.4 * u} fill="none" stroke="#ef4444" strokeWidth={0.7 * u} />
+            <circle className="survivor-ping survivor-ping-delayed" r={2.4 * u} fill="none" stroke="#ef4444" strokeWidth={0.7 * u} />
+            <circle r={1.4} fill="#ef4444" stroke="#450a0a" strokeWidth={0.4} />
           </g>
         )}
         {drivenPath.length > 1 && (
