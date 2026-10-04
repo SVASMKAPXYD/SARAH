@@ -1,12 +1,12 @@
 {
   "version": "2.0.0",
   "tasks": [
-    { "label": "build-azure", "type": "shell", "options": { "shell": { "executable": "bash", "args": ["-c"] } }, "command": "source \"${NVM_DIR:-$HOME/.nvm}/nvm.sh\" && nvm use && npm run build:azure" },
-    { "label": "sync-env", "type": "shell", "options": { "shell": { "executable": "bash", "args": ["-c"] } }, "command": "source \"${NVM_DIR:-$HOME/.nvm}/nvm.sh\" && nvm use && npm run sync:env" },
     {
       "label": "predeploy-azure",
-      "dependsOrder": "sequence",
-      "dependsOn": ["build-azure", "sync-env"]
+      "type": "shell",
+      "options": { "shell": { "executable": "bash", "args": ["-c"] } },
+      "command": "source \"${NVM_DIR:-$HOME/.nvm}/nvm.sh\" && nvm use && npm run build:azure && npm run sync:env",
+      "presentation": { "reveal": "always", "panel": "dedicated", "close": true }
     }
   ]
 }
