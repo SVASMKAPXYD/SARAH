@@ -11,7 +11,7 @@ import { Toggle } from '@/components/ui/Toggle';
 import { useMission } from '@/hooks/useMission';
 import { useMissionStore, useUIStore, type DeciderMode } from '@/store/missionStore';
 
-export default function Controls({ className = '' }: { className?: string }) {
+export default function Controls({ className = '', showTransport = true }: { className?: string; showTransport?: boolean }) {
   const { status, deciderMode, run, pause, resume, reset, regenerate, setDeciderMode, downloadReplay } = useMission();
   const lastSource = useMissionStore((s) => s.lastSource);
   const seed = useMissionStore((s) => s.seed);
@@ -48,24 +48,26 @@ export default function Controls({ className = '' }: { className?: string }) {
         }
       />
       <CardBody className="space-y-2.5">
-        <div className="flex flex-wrap gap-1.5">
-          {status === 'paused' ? (
-            <Button variant="primary" onClick={resume}>
-              ▶ Resume
+        {showTransport && (
+          <div className="flex flex-wrap gap-1.5">
+            {status === 'paused' ? (
+              <Button variant="primary" onClick={resume}>
+                ▶ Resume
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={run} disabled={running}>
+                ▶ Run
+              </Button>
+            )}
+            <Button onClick={pause} disabled={!running}>
+              ❚❚ Pause
             </Button>
-          ) : (
-            <Button variant="primary" onClick={run} disabled={running}>
-              ▶ Run
+            <Button onClick={reset}>Reset</Button>
+            <Button onClick={() => regenerate(Math.floor(Math.random() * 100000))} title="New random seed, same terrain params">
+              ↻ Regenerate
             </Button>
-          )}
-          <Button onClick={pause} disabled={!running}>
-            ❚❚ Pause
-          </Button>
-          <Button onClick={reset}>Reset</Button>
-          <Button onClick={() => regenerate(Math.floor(Math.random() * 100000))} title="New random seed, same terrain params">
-            ↻ Regenerate
-          </Button>
-        </div>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-1.5 text-xs text-zinc-400">
             decider

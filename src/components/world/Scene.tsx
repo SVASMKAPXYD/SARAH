@@ -10,14 +10,13 @@
  *
  * Every mesh carries `userData.thermal` (0..1) for the thermal pass in SensorRig.
  */
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { HEADLAMP_RANGE_M, THERMAL_TEMPERATURE } from '@/lib/constants';
 import { DEG, dirFromBearing, rayCircle } from '@/lib/geo';
 import type { World } from '@/lib/world/terrain';
 import { useMissionStore, useUIStore } from '@/store/missionStore';
-import SensorRig from './SensorRig';
 
 export const TRUTH_LAYER = 1;
 
@@ -407,12 +406,19 @@ const CAM_MIN_BACK_M = 2.5;
  * with canopy, so the back distance is clamped to the first tree footprint hit by a 2D ray
  * cast backwards from the rover (camera collision, plan §2 "third-person view").
  */
-function FollowCamera({ world }: { world: World }) {
+export function FollowCamera({ world }: { world: World }) {
   const camera = useThree((s) => s.camera);
   const look = useRef(new THREE.Vector3());
   const want = useRef(new THREE.Vector3());
   const init = useRef(false);
   useFrame(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    // First-person mode borrows this camera and changes fov/near; restore the chase lens.
+    if (cam.isPerspectiveCamera && (cam.fov !== 60 || cam.near !== 0.5)) {
+      cam.fov = 60;
+      cam.near = 0.5;
+      cam.updateProjectionMatrix();
+    }
     const r = useMissionStore.getState().rover;
     const d = dirFromBearing(r.headingDeg);
     const back = { x: -d.x, z: -d.z };
@@ -439,7 +445,7 @@ function FollowCamera({ world }: { world: World }) {
   return null;
 }
 
-function TruthLayerToggle() {
+export function TruthLayerToggle() {
   const revealTruth = useUIStore((s) => s.revealTruth);
   const camera = useThree((s) => s.camera);
   useEffect(() => {
@@ -450,7 +456,7 @@ function TruthLayerToggle() {
 }
 
 /** Background + fog must be direct children of the Canvas (`attach` targets the parent). */
-function Sky({ world }: { world: World }) {
+export function Sky({ world }: { world: World }) {
   const far = 35 + (1 - world.params.fog_density) * 140;
   return (
     <>
@@ -460,7 +466,7 @@ function Sky({ world }: { world: World }) {
   );
 }
 
-function Atmosphere({ world }: { world: World }) {
+export function Atmosphere({ world }: { world: World }) {
   const { moonlight } = world.params;
   const moon = 1.0 + moonlight * 2.0;
   return (
@@ -476,34 +482,21 @@ function Atmosphere({ world }: { world: World }) {
 // Scene
 // ---------------------------------------------------------------------------
 
-export default function Scene({ className = '' }: { className?: string }) {
-  const world = useMissionStore((s) => s.world);
-  const worldVersion = useMissionStore((s) => s.worldVersion);
+/** Shared night-forest meshes. The map and POV canvases each mount their own copy. */
+export function WorldMeshes({ world }: { world: World }) {
   return (
-    <div className={`relative h-full w-full ${className}`}>
-      <Canvas camera={{ fov: 60, near: 0.5, far: 500, position: [0, 5, 10] }} dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-        {world && (
-          <group key={worldVersion}>
-            <Atmosphere world={world} />
-            <Ground world={world} />
-            <Trails world={world} />
-            <Trees world={world} />
-            <Logs world={world} />
-            <Rocks world={world} />
-            <WaterMesh world={world} />
-            <Fungi world={world} />
-            <BaseMarker world={world} />
-            <Rover world={world} />
-            <Survivor world={world} />
-            <Animals world={world} />
-            <FollowCamera world={world} />
-            <SensorRig world={world} />
-          </group>
-        )}
-        {world && <Sky world={world} />}
-        <TruthLayerToggle />
-      </Canvas>
-      {!world && <div className="absolute inset-0 grid place-items-center text-sm text-zinc-500">Generating world…</div>}
-    </div>
+    <>
+      <Ground world={world} />
+      <Trails world={world} />
+      <Trees world={world} />
+      <Logs world={world} />
+      <Rocks world={world} />
+      <WaterMesh world={world} />
+      <Fungi world={world} />
+      <BaseMarker world={world} />
+      <Rover world={world} />
+      <Survivor world={world} />
+      <Animals world={world} />
+    </>
   );
 }

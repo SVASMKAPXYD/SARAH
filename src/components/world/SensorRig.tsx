@@ -116,6 +116,8 @@ export default function SensorRig({ world }: { world: World }) {
   const cam = useMemo(() => {
     const c = new THREE.PerspectiveCamera(CAMERA_VFOV_DEG, W / H, 0.1, 300);
     c.layers.enableAll();
+    // Display-only passes (night grade, thermal preview) must not retint this capture.
+    c.userData.sensor = true;
     return c;
   }, []);
 
