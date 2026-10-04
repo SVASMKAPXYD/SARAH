@@ -1,21 +1,21 @@
 # Remaining
 
-`azael` @ `999959a`. The loop through T+4–8 is in the tree and runs on the mock decider. A live Gemini call, a complete mission, and any host are not. Do the live checkpoint next. The T+12 demo replay stays deferred.
+`azael` @ `999959a`. The loop through T+4–8 is in the tree and runs on the mock decider. The production build now passes on Node 24, and lint/typecheck pass. No live Gemini call, complete mission, or deployment has been verified. Checked against current provider docs on 2026-10-03. The T+8 live checkpoint remains next; the T+12 demo replay stays deferred.
 
 ## Next — live Gemini (T+8)
 
-1. **Billing.** Plan §7.1 is still open. §6: one free-tier project cannot finish a mission (25–40 calls). Turn on Tier 1, or organizer credits, before a live run.
-2. **Smoke-test the client.** `GEMINI_API_KEY` is empty. `DECIDER=mock` forces the mock decider even after a key is set (`src/app/api/decide/route.ts`, same for `/api/terrain`). `src/lib/gemini/client.ts` has never called the Interactions API with a live key; field names are only checked against `@google/genai` 2.27 typings (`TODO(P2)`).
-3. **T+8 checkpoint.** One live `MOVE` on the sim terrain, and a node or frontier that call declared, drawn on the map.
+1. **Billing.** No project billing or organizer credits are confirmed. Current AI Studio billing/rate-limit setup is documented in [`deployment.md`](./deployment.md); check this project's current model quotas and billing plan rather than relying on old free-tier estimates.
+2. **Smoke-test the client.** No `.env.local` or `GEMINI_API_KEY` is present here, so no live request was possible. `DECIDER` is now blank in `.env.example`, so a key enables live calls by default. The image, `resolution`, structured-output, and Interactions request fields match current Google docs, but the actual request still needs a live smoke test (`TODO(P2)` in `src/lib/gemini/client.ts`).
+3. **T+8 checkpoint.** Still outstanding: one live `MOVE` on sim terrain, with a node or frontier declared by that response and drawn on the map. The local `/api/health` endpoint reports configuration only; verify the `LIVE · gemini` response in the UI.
 
 ## Before a real deploy
 
-Plan §5 schedules Azure App Service at T+12–16, and only after the checkpoint in the next section. The host files are missing either way.
+Plan §5 schedules Azure App Service at T+12–16, after the live checkpoint. [`deployment.md`](./deployment.md) now documents an early Azure prototype path, but no cloud resource or deployment exists yet.
 
-- No Dockerfile, `vercel.json`, Azure / App Service config, or CI.
-- A public build must not force mock: leave `DECIDER` unset once the key works. Keep `GEMINI_API_KEY` server-only.
-- `NEXT_PUBLIC_DEV_CONSOLE=1` is in `.env.example` and would ship the manual console. The demo build hides it (plan §2). `?dev=1` still opens it.
-- Tiger Data is not started. Plan §1 and §7.8: stretch, and fine to drop if the checkpoint slips. Not required for a public URL.
+- No Dockerfile, `vercel.json`, Azure / App Service config, or CI. Node.js 24 LTS is recommended; Next.js 16 requires Node.js 20.9 or newer. `npm run build` passes on Node 24.
+- A public build must not force mock: leave `DECIDER` unset. Keep `GEMINI_API_KEY` server-only. The sample no longer forces mock.
+- The manual console is now development-only: the sample no longer enables it by default, and production ignores `?dev=1` and hides the manual controls.
+- Tiger Data is not started or integrated. Plan §1 and §7.8: stretch, and fine to drop if the checkpoint slips. Not required for a public URL.
 - No automated tests. The plan does not schedule any.
 
 ## Deferred — T+12 demo replay

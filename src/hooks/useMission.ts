@@ -20,7 +20,9 @@ export function useMission() {
     booted = true;
     controller.ensureWorld();
     const sp = new URLSearchParams(window.location.search);
-    if (sp.get('dev') === '1' || process.env.NEXT_PUBLIC_DEV_CONSOLE === '1') useUIStore.getState().setDevConsole(true);
+    if (process.env.NODE_ENV !== 'production' && (sp.get('dev') === '1' || process.env.NEXT_PUBLIC_DEV_CONSOLE === '1')) {
+      useUIStore.getState().setDevConsole(true);
+    }
     const replay = sp.get('replay');
     if (replay) {
       controller.loadReplay(replay).catch((e: Error) => {

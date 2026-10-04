@@ -8,8 +8,7 @@
  *   media_resolution: "low" (per image part)
  *
  * The API key lives only in GEMINI_API_KEY. Never import this file from client code.
- * TODO(P2): verify field names against ai.google.dev once a live key is available
- *           (Interactions API shape checked against @google/genai 2.27 typings).
+ * TODO(P2): smoke-test the Interactions request against a live Gemini project.
  */
 import 'server-only';
 import { GoogleGenAI } from '@google/genai';

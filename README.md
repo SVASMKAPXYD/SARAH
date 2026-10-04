@@ -10,7 +10,8 @@ follows routes the rover has already driven (`GOTO_NODE`, `EXTRACT`) and grades 
 ground truth Gemini never sees.
 
 Design docs: [`plan.md`](./plan.md) (build plan, source of truth), [`fable.md`](./fable.md) (notes),
-[`multimodal_sar_agent_architecture.md`](./multimodal_sar_agent_architecture.md) (original spec).
+[`multimodal_sar_agent_architecture.md`](./multimodal_sar_agent_architecture.md) (original spec),
+[`deployment.md`](./deployment.md) (Gemini, Azure, Tiger Data, and GoDaddy setup).
 
 ## Quick start
 
@@ -19,6 +20,8 @@ npm install
 cp .env.example .env.local      # optional; without a key the app runs in mock mode
 npm run dev                     # http://localhost:3000
 ```
+
+Use Node.js 24 LTS (Next.js 16 requires Node.js 20.9 or newer).
 
 Press **Run**. With no `GEMINI_API_KEY` the server answers `/api/decide` with a deterministic
 **mock decider** (steers toward the clearest LiDAR column, declares nodes/frontiers, backtracks with
@@ -35,7 +38,7 @@ Other scripts: `npm run build`, `npm run start`, `npm run lint`, `npx tsc --noEm
 | `GEMINI_API_KEY` | Server-only key. Never prefix with `NEXT_PUBLIC_`; the browser never calls Gemini. |
 | `GEMINI_MODEL` | Model id, default `gemini-3.8-flash`. |
 | `DECIDER` | `mock` forces the mock decider even when a key is present. Mock is also automatic when the key is missing or `?mock=1` is passed to the API. |
-| `NEXT_PUBLIC_DEV_CONSOLE` | `1` shows the manual decision console (also `?dev=1` in the URL or the "Dev console" toggle). |
+| `NEXT_PUBLIC_DEV_CONSOLE` | `1` shows the manual decision console in development builds (also `?dev=1` or the "Dev console" toggle). Production builds always disable it. |
 
 ## Mock vs live
 
@@ -50,9 +53,8 @@ Other scripts: `npm run build`, `npm run start`, `npm run lint`, `npx tsc --noEm
 
 ## Manual decision console (dev)
 
-Enable with `NEXT_PUBLIC_DEV_CONSOLE=1`, `?dev=1`, or the "Dev console" toggle. Set the decider to
-**manual console** and press Run: after every action the loop waits for you. Paste or build a
-Decision JSON (presets: MOVE, turn, node + frontier, GOTO BASE, CONFIRMED, MARK_SURVIVOR,
+Available in development with `NEXT_PUBLIC_DEV_CONSOLE=1`, `?dev=1`, or the "Dev console" toggle.
+Production builds hide and disable it. Set the decider to **manual console** and press Run: after every action the loop waits for you. Paste or build a Decision JSON (presets: MOVE, turn, node + frontier, GOTO BASE, CONFIRMED, MARK_SURVIVOR,
 RETURN_TO_BASE) and submit — the same schema Gemini returns, through the same executor and protocol
 rules (MARK needs CONFIRMED_CANDIDATE twice within 2 m; RETURN_TO_BASE only after RESCUE).
 
