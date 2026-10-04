@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react';
 import { WORLD_HALF_SIZE_M } from '@/lib/constants';
-import { BELIEF_CELL_M } from '@/lib/sim/briefing';
 import { useMissionStore, useUIStore } from '@/store/missionStore';
 
 export default function GraphOverlay({ size = 260, className = '' }: { size?: number; className?: string }) {
@@ -11,12 +10,10 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
   const markPosition = useMissionStore((state) => state.markPosition);
   const world = useMissionStore((state) => state.world);
   const revealTruth = useUIStore((state) => state.revealTruth);
-  const belief = useMissionStore((state) => state.belief);
 
   const view = useMemo(() => {
     const points = [...drivenPath, { x: rover.x, z: rover.z }];
     if (world) points.push(world.truth.survivor);
-    if (belief) points.push(belief.focus);
     let minX = Infinity;
     let maxX = -Infinity;
     let minZ = Infinity;
@@ -29,7 +26,7 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
     }
     const span = Math.max(50, maxX - minX + 28, maxZ - minZ + 28);
     return { x: (minX + maxX - span) / 2, z: (minZ + maxZ - span) / 2, span };
-  }, [drivenPath, rover.x, rover.z, world, belief]);
+  }, [drivenPath, rover.x, rover.z, world]);
 
   const u = view.span / size;
   const half = WORLD_HALF_SIZE_M;
@@ -42,10 +39,6 @@ export default function GraphOverlay({ size = 260, className = '' }: { size?: nu
       <svg width={size} height={size} viewBox={`${view.x} ${view.z} ${view.span} ${view.span}`} className="block">
         <rect x={-half} y={-half} width={half * 2} height={half * 2} fill="none" stroke="#27272a" strokeWidth={0.6 * u} />
         <GridLines view={view} u={u} />
-        {belief && belief.cells.map((cell) => (
-          <rect key={`${cell.x}:${cell.z}`} x={cell.x - BELIEF_CELL_M / 2} y={cell.z - BELIEF_CELL_M / 2} width={BELIEF_CELL_M} height={BELIEF_CELL_M} fill="#f59e0b" fillOpacity={0.18 + cell.p * belief.strength * 0.55} />
-        ))}
-        {belief && <circle cx={belief.focus.x} cy={belief.focus.z} r={2.2} fill="none" stroke="#fbbf24" strokeWidth={0.7} />}
         {revealTruth && world && (
           <g opacity={0.85}>
             {world.water?.kind === 'creek' && (

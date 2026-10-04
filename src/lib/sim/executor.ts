@@ -39,20 +39,6 @@ export function planAction(decision: Decision): ActionPlan {
   };
 }
 
-/** Point an in-progress move at a new bearing without waiting for the next decision. */
-export function retargetExecution(exec: ExecState, bearingDeg: number, distanceM: number, headingDeg: number): ExecState {
-  if (exec.plan.kind !== 'MOVE' || exec.stage === 'DONE') return exec;
-  const bearing = normalizeBearing(bearingDeg);
-  return {
-    plan: { kind: 'MOVE', bearingDeg: bearing, distanceM },
-    stage: 'TURN',
-    targetHeadingDeg: bearing,
-    startHeadingDeg: headingDeg,
-    drivenM: 0,
-    blockedBy: null,
-  };
-}
-
 export function startExecution(plan: ActionPlan, rover: RoverState): ExecState {
   const targetHeadingDeg = plan.kind === 'MOVE' ? normalizeBearing(plan.bearingDeg) : rover.headingDeg;
   return {

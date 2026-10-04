@@ -1,24 +1,17 @@
 'use client';
 /**
- * Bottom-of-screen radio bar. Briefings are parsed into weighted search constraints
- * and applied by the mission loop; this panel only collects them and shows the weight.
+ * Bottom-of-screen radio bar. Briefings are forwarded verbatim to Gemini as context.
  */
 import { useState, type FormEvent } from 'react';
 import { useMission } from '@/hooks/useMission';
-import { compassLabel, formatFocusOffset, previewCommand } from '@/lib/sim/briefing';
 import { useMissionStore } from '@/store/missionStore';
 
 export default function BriefingBar({ immersive }: { immersive: boolean }) {
   const { submitBriefing } = useMission();
   const briefings = useMissionStore((s) => s.briefings);
-  const belief = useMissionStore((s) => s.belief);
-  const heading = useMissionStore((s) => Math.round(s.rover.headingDeg));
-  const rover = useMissionStore((s) => s.rover);
-  const command = useMissionStore((s) => s.lastDecision?.bearing_deg);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const preview = belief ? previewCommand(heading, { x: rover.x, z: rover.z }, belief) : null;
   const recent = briefings.slice(-6).reverse();
 
   const send = (event?: FormEvent) => {
@@ -48,25 +41,14 @@ export default function BriefingBar({ immersive }: { immersive: boolean }) {
       className={`relative z-30 shrink-0 ${shell}`}
       data-briefing-bar
       data-briefing-count={briefings.length}
-      data-rover-heading={heading}
-      data-rover-x={rover.x.toFixed(1)}
-      data-rover-z={rover.z.toFixed(1)}
-      data-command-bearing={command == null ? '' : String(Math.round(command))}
-      data-belief-strength={belief ? belief.strength.toFixed(2) : ''}
-      data-belief-bearing={preview ? String(Math.round(preview.bearingDeg)) : ''}
-      data-focus-bearing={belief ? String(Math.round(belief.focusBearingDeg)) : ''}
-      data-focus-x={belief ? belief.focus.x.toFixed(1) : ''}
-      data-focus-z={belief ? belief.focus.z.toFixed(1) : ''}
-      data-highlight-count={belief ? belief.cells.length : 0}
-      data-spread={belief ? belief.spreadM.toFixed(1) : ''}
     >
       <form className="flex items-center gap-2 px-2 pt-2" onSubmit={send}>
-        <label htmlFor="sarah-briefing" className="sr-only">Tell Sarah new search information</label>
+        <label htmlFor="sarah-briefing" className="sr-only">Send field information to Gemini</label>
         <input
           id="sarah-briefing"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder='Tell Sarah — “the hiker is to the south of Sarah’s current location”'
+          placeholder="Field report for Gemini — “the hiker was seen near the creek”"
           autoComplete="off"
           className={`h-8 min-w-0 flex-1 rounded border px-2 text-sm outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-sky-700 ${field}`}
         />
@@ -78,38 +60,23 @@ export default function BriefingBar({ immersive }: { immersive: boolean }) {
         </button>
       </form>
       {error && <p className="px-2 pt-1 text-xs text-rose-600">{error}</p>}
+      <p className={`px-2 pt-1 text-[11px] ${immersive ? 'text-slate-300' : 'text-slate-600'}`}>
+        Field reports are sent verbatim to Gemini. Gemini alone decides how to use them.
+      </p>
       {recent.length > 0 && (
-        <ul className="flex gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Recent briefings">
-          {recent.map((b) => {
-            const stated = Math.round(b.certainty * 100);
-            const applied = Math.round(b.weight * 100);
+        <ul className="flex gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Recent field reports sent to Gemini">
+          {recent.map((briefing, index) => {
             return (
               <li
-                key={b.id}
-                title={`${b.summary}. Language certainty ${stated}%. Applied weight ${applied}%.`}
-                data-certainty={b.certainty.toFixed(2)}
-                data-certainty-label={b.certaintyLabel}
-                data-applied-weight={b.weight.toFixed(2)}
-                data-suppressed={b.suppressed ? 'true' : 'false'}
-                className={`flex max-w-[34rem] shrink-0 items-center gap-2 rounded border px-2 py-1 text-[11px] ${chip}`}
+                key={`${briefings.length - index}:${briefing}`}
+                title={briefing}
+                className={`max-w-[34rem] shrink-0 truncate rounded border px-2 py-1 text-[11px] ${chip}`}
               >
-                <span className="max-w-[22rem] truncate">{b.text}</span>
-                <span className={`shrink-0 font-mono uppercase ${b.certaintyLabel === 'high' ? (immersive ? 'text-amber-200' : 'text-amber-800') : b.certaintyLabel === 'low' ? (immersive ? 'text-slate-400' : 'text-slate-500') : ''}`}>
-                  {b.certaintyLabel} {stated}%
-                </span>
-                <span className={`h-1.5 w-12 overflow-hidden rounded ${immersive ? 'bg-white/15' : 'bg-slate-200'}`} aria-hidden>
-                  <span className="block h-full bg-amber-500" style={{ width: `${Math.max(4, applied)}%` }} />
-                </span>
-                {b.suppressed && <span className="shrink-0 text-rose-500">direction overruled · {applied}%</span>}
+                <span className="max-w-[32rem]">{briefing}</span>
               </li>
             );
           })}
         </ul>
-      )}
-      {belief && preview && (
-        <p className={`px-2 pb-2 text-[11px] ${immersive ? 'text-amber-100/90' : 'text-slate-700'}`}>
-          Search focus {formatFocusOffset({ x: rover.x, z: rover.z }, belief.focus)} ({compassLabel(belief.focusBearingDeg)}) · clue weight {Math.round(belief.strength * 100)}% · next heading {Math.round(preview.bearingDeg)}°
-        </p>
       )}
     </footer>
   );

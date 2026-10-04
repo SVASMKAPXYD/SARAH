@@ -19,8 +19,7 @@ import { distance } from '../geo';
 import type { DecideResponse, Decision, FeedEntry, ObservationPacket, ReplayLog, TerrainParams } from '../types';
 import { initAnimals, stepAnimals } from '../world/animals';
 import { generateWorld } from '../world/terrain';
-import { computeSearchBelief, guidanceFromBelief, parseBriefing, steerDecision, type SearchBelief } from './briefing';
-import { planAction, retargetExecution, startExecution, tickExecution, type ActionPlan } from './executor';
+import { planAction, startExecution, tickExecution, type ActionPlan } from './executor';
 import { gradeMission } from './grading';
 import { buildPacket } from './packetBuilder';
 import { createReplayLog, hashPacket, loadReplay, recordEntry, ReplayPlayer, serializeReplay } from './replay';
@@ -38,9 +37,6 @@ export class MissionController {
   private feedId = 1;
   private replayPlayer: ReplayPlayer | null = null;
   private pendingPacket: ObservationPacket | null = null;
-  private briefingId = 1;
-  /** Unguided bearing from the last decider output, so a new clue does not blend twice. */
-  private lastUnguided: { bearingDeg: number; distanceM: number } | null = null;
 
   // ------------------------------------------------------------------ helpers
   private get s(): MissionState {
@@ -87,8 +83,6 @@ export class MissionController {
     this.inflight = false;
     this.pendingPacket = null;
     this.sensorAccum = 0;
-    this.briefingId = 1;
-    this.lastUnguided = null;
     this.replayPlayer = s.replaySource ? new ReplayPlayer(s.replaySource) : null;
     const world = s.world;
     const rover = initialRover();
@@ -114,7 +108,6 @@ export class MissionController {
       memory: '',
       feed: [],
       briefings: [],
-      belief: null,
       markPosition: null,
       grade: null,
       frame: null,
@@ -164,28 +157,16 @@ export class MissionController {
     this.set({ seed });
   }
 
-  /**
-   * Radio a field briefing. Parsed clues update the belief immediately and, if Sarah
-   * is already moving, retarget the current step. Later decisions blend the same way.
-   */
+  /** Save a field briefing verbatim for Gemini's next decision. */
   submitBriefing(raw: string): { ok: boolean; error?: string } {
-    const text = raw.replace(/\s+/g, ' ').trim();
-    if (!text) return { ok: false, error: 'Enter a briefing first.' };
+    if (!raw.trim()) return { ok: false, error: 'Enter a briefing first.' };
+    if (raw.length > 500) return { ok: false, error: 'Briefings must be 500 characters or fewer.' };
     this.ensureWorld();
     const s = this.s;
     if (!s.world) return { ok: false, error: 'The map is not ready yet.' };
-    const parsed = parseBriefing(text, { x: s.rover.x, z: s.rover.z }, this.briefingId++);
-    const briefings = [...s.briefings, parsed].slice(-24);
+    const briefings = [...s.briefings, raw].slice(-24);
     this.set({ briefings });
-    const belief = this.refreshBelief();
-    const pct = Math.round(parsed.certainty * 100);
-    this.feed(
-      'system',
-      belief
-        ? `Briefing noted (${parsed.certaintyLabel} ${pct}%): ${parsed.summary}.`
-        : `Briefing noted (${parsed.certaintyLabel} ${pct}%): ${parsed.summary}. Search pattern unchanged.`,
-    );
-    this.redirectToBelief();
+    this.feed('system', 'Field briefing saved verbatim for Gemini’s next decision.');
     return { ok: true };
   }
 
@@ -329,7 +310,6 @@ export class MissionController {
 
   private buildCurrentPacket(): ObservationPacket {
     const s = this.s;
-    const belief = s.belief;
     return buildPacket({
       phase: s.rover.phase,
       step: s.rover.step,
@@ -339,35 +319,8 @@ export class MissionController {
       memory: s.memory,
       lastResult: s.lastResult,
       budget: s.budget,
-      guidance: belief ? guidanceFromBelief(belief, s.briefings) : undefined,
+      fieldBriefings: s.briefings,
     });
-  }
-
-  /** Recompute the belief from the briefings already stored. No briefings leaves search alone. */
-  private refreshBelief(): SearchBelief | null {
-    const s = this.s;
-    if (!s.world || s.briefings.length === 0) {
-      if (s.belief) this.set({ belief: null });
-      return null;
-    }
-    const { briefings, belief } = computeSearchBelief(s.briefings, s.world, { x: s.rover.x, z: s.rover.z });
-    this.set({ briefings, belief });
-    return belief;
-  }
-
-  /** Swing the move already in progress toward the latest belief. */
-  private redirectToBelief() {
-    const s = this.s;
-    const belief = s.belief;
-    const exec = s.exec;
-    if (!belief || s.rover.phase !== 'SEARCH' || !exec || exec.plan.kind !== 'MOVE' || exec.stage === 'DONE') return;
-    if (s.status !== 'running' && s.status !== 'waiting_for_gemini' && s.status !== 'paused') return;
-    const base = this.lastUnguided ?? { bearingDeg: s.rover.headingDeg, distanceM: 6 };
-    const steered = steerDecision(
-      { bearing_deg: base.bearingDeg, distance_m: base.distanceM, reason: 'redirect', replace_entire_memory: s.memory },
-      belief,
-    );
-    this.set({ exec: retargetExecution(exec, steered.bearing_deg, steered.distance_m, s.rover.headingDeg) });
   }
 
   private async requestDecision() {
@@ -379,7 +332,6 @@ export class MissionController {
       return;
     }
     this.inflight = true;
-    this.refreshBelief();
     const packet = this.buildCurrentPacket();
     this.set({ needsDecision: false, status: 'waiting_for_gemini' });
 
@@ -452,19 +404,16 @@ export class MissionController {
   ) {
     const s = this.s;
     if (!s.world) return;
-    const belief = this.refreshBelief();
-    this.lastUnguided = { bearingDeg: decision.bearing_deg, distanceM: decision.distance_m };
-    const guided = s.deciderMode === 'manual' || s.rover.phase !== 'SEARCH' ? decision : steerDecision(decision, belief);
     const step = s.rover.step + 1;
     const decisionsUsed = s.rover.decisionsUsed + 1;
 
-    const phase = guided.mark_survivor ? 'EXTRACT' : s.rover.phase;
+    const phase = decision.mark_survivor ? 'EXTRACT' : s.rover.phase;
     const rover = { ...s.rover, step, decisionsUsed, phase };
-    const plan = planAction(guided);
+    const plan = planAction(decision);
     const exec = startExecution(plan, rover);
 
     const replayLog = s.replayLog
-      ? recordEntry(s.replayLog, { seed: s.seed, step, packetHash: hashPacket(packet), decision: guided, thought: meta.thought, model: meta.model, latencyMs: meta.latencyMs })
+      ? recordEntry(s.replayLog, { seed: s.seed, step, packetHash: hashPacket(packet), decision, thought: meta.thought, model: meta.model, latencyMs: meta.latencyMs })
       : s.replayLog;
 
     const keepPaused = this.s.status === 'paused';
@@ -473,24 +422,24 @@ export class MissionController {
       exec,
       status: keepPaused ? 'paused' : 'running',
       pausedFrom: keepPaused ? 'running' : null,
-      lastDecision: guided,
+      lastDecision: decision,
       lastThought: meta.thought,
       lastLatencyMs: meta.latencyMs,
       lastTokens: meta.tokens,
       totalTokens: s.totalTokens + meta.tokens.total,
       lastSource: meta.source,
       lastModel: meta.model,
-      memory: guided.replace_entire_memory,
+      memory: decision.replace_entire_memory,
       replayLog,
       error: null,
     });
 
-    const actionText = guided.mark_survivor
+    const actionText = decision.mark_survivor
       ? 'MARK_SURVIVOR at current position'
-      : `MOVE bearing ${Math.round(guided.bearing_deg)}°, ${guided.distance_m} m`;
+      : `MOVE bearing ${Math.round(decision.bearing_deg)}°, ${decision.distance_m} m`;
     if (meta.thought) this.feed('thought', meta.thought, { thought: meta.thought, source: meta.source });
-    this.feed('decision', `${guided.reason} → ${actionText}`, { decision: guided, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
-    if (guided.replace_entire_memory !== s.memory) {
+    this.feed('decision', `${decision.reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
+    if (decision.replace_entire_memory !== s.memory) {
       this.feed('system', 'Gemini replaced its persistent memory.');
     }
     // MARK plans have no motion: resolve them now so last_result is reported and

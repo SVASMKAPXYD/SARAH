@@ -10,8 +10,11 @@ SARAH is a simulated night search rover. **Gemini is the search-and-navigation b
 | Every absolute bearing and travel distance; search, backtrack, decide whether to mark, and return to base. | Execute the requested movement, enforce physical limits, and stop at simulated collisions. |
 | What to preserve in its memory and when to replace that memory. | Include the current memory text in the next independent request; keep no hidden model conversation. |
 | Whether an observation is enough to claim the survivor. | Record the mark and grade it against hidden truth after the run. |
+| How to interpret raw field-team radio reports. | Keep up to 24 reports (500 characters each) verbatim and provide them as context; never parse them into navigation guidance. |
 
 There is no local route planner, frontier selection, candidate ranking, evidence threshold, or automatic return. A graph is no longer Gemini's memory or an input to its decision. Local collision geometry is simulation physics, not navigation advice. The operator map shows the driven path and an always-visible hiker location marker for operator guidance; other hidden truth may be revealed for evaluation. None of this map data is sent to Gemini.
+
+The `field_briefings` packet field contains the original operator-entered strings. Gemini alone interprets these reports alongside its sensors and memory. The simulator does not derive bearings, confidence weights, map focus regions, or movement adjustments from their text. Reports are sent in the next decision request; a report submitted while a request is already in flight does not alter that decision or its execution.
 
 ## Per-turn contract
 
@@ -22,6 +25,7 @@ There is no local route planner, frontier selection, candidate ranking, evidence
 - current position `{x,z}` in meters and compass heading in degrees;
 - sensor calibration, including the depth encoding;
 - the current free-form `memory` text (empty at mission start);
+- `field_briefings`, the retained verbatim field-team reports (up to 24 strings, each up to 500 characters);
 - the simulator's exact result for the previous movement.
 
 Depth is encoded losslessly as PNG with fixed-saturation/value HSV color: hue increases from red (0°) at 0 m through yellow, green, and cyan to blue (240°) just below 35 m; no-return pixels and surfaces at or beyond 35 m are black. Distance is radial from the sensor camera origin. Do not send a second numeric depth grid, local collision advice, or hidden-world data.

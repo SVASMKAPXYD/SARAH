@@ -1,6 +1,6 @@
 import { DECISION_BUDGET, WORLD_HALF_SIZE_M } from '../constants.ts';
 import { round } from '../geo.ts';
-import type { ObservationPacket, Phase, SearchGuidance } from '../types';
+import type { ObservationPacket, Phase } from '../types';
 import { SENSOR_CALIBRATION } from './depth.ts';
 
 export interface PacketInputs {
@@ -12,7 +12,7 @@ export interface PacketInputs {
   memory: string;
   lastResult: string;
   budget?: number;
-  guidance?: SearchGuidance;
+  fieldBriefings?: string[];
 }
 
 export function buildPacket(i: PacketInputs): ObservationPacket {
@@ -43,6 +43,6 @@ export function buildPacket(i: PacketInputs): ObservationPacket {
     sensors: SENSOR_CALIBRATION,
     memory: i.memory,
     last_result: i.lastResult,
-    ...(i.guidance ? { search_guidance: i.guidance } : {}),
+    field_briefings: i.fieldBriefings ?? [],
   };
 }

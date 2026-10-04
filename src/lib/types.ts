@@ -46,23 +46,8 @@ export interface ObservationPacket {
   sensors: SensorCalibration;
   memory: string;
   last_result: string;
-  /** Present only after the field team radios a location clue. */
-  search_guidance?: SearchGuidance;
-}
-
-/** Weighted field briefings the decider should fold into the next search move. */
-export interface SearchGuidance {
-  strength: number;
-  focus_bearing_deg: number;
-  step_m: number;
-  summary: string;
-  clues: {
-    text: string;
-    certainty: number;
-    weight: number;
-    summary: string;
-    suppressed: boolean;
-  }[];
+  /** Verbatim field-team notes; Gemini alone interprets them and chooses actions. */
+  field_briefings: string[];
 }
 
 // ---------------------------------------------------------------------------

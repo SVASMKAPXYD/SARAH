@@ -12,6 +12,7 @@ test('decision packet carries current pose, result, and explicit memory without 
     memory: 'Creek is east.',
     lastResult: 'BLOCKED by TREE after 1.0 m',
     budget: 40,
+    fieldBriefings: ['Field team saw a possible hiker beside the creek.'],
   });
 
   assert.deepEqual(packet.world, {
@@ -23,6 +24,7 @@ test('decision packet carries current pose, result, and explicit memory without 
   assert.deepEqual(packet.pose, { x: 1.2, z: -2.3, heading_deg: 1 });
   assert.equal(packet.memory, 'Creek is east.');
   assert.equal(packet.last_result, 'BLOCKED by TREE after 1.0 m');
+  assert.deepEqual(packet.field_briefings, ['Field team saw a possible hiker beside the creek.']);
   assert.equal(packet.mission.decisions_remaining, 37);
   assert.equal('map' in packet, false);
 });
