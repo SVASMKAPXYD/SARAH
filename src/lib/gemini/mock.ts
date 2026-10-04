@@ -4,9 +4,9 @@
  *
  * Behaviour: steer toward the clearest LiDAR column, declare a VIEWPOINT every few
  * steps (DEAD_END when blocked), add a frontier for other open columns, occasionally
- * GOTO_NODE to exercise path following. It never marks a survivor and never returns
- * to base (RETURN_TO_BASE is only legal after RESCUE), so a mock mission ends by
- * budget exhaustion — that is expected; use the manual console for RESCUE/EXTRACT.
+ * GOTO_NODE to exercise path following. It never marks a survivor, so a mock mission
+ * ends by budget exhaustion — that is expected; use the manual console for MARK_SURVIVOR.
+ * Once the packet reports phase RESCUE (after a manual mark) it issues RETURN_TO_BASE.
  */
 import { LIDAR_COLUMN_KEYS, LIDAR_MAX_M, MAX_MOVE_M } from '../constants';
 import { normDeg } from '../geo';
@@ -30,9 +30,46 @@ export function mockDecide(packet: ObservationPacket): Decision {
   const blocked = /^BLOCKED/.test(packet.last_result);
   const nodes = packet.map.nodes;
 
-  // Rank columns by clearance.
+  // After an accepted MARK_SURVIVOR (packet says phase RESCUE/EXTRACT) the only sensible
+  // move is extraction. Still packet-only: the mock reads the phase, not ground truth.
+  if (packet.mission.phase === 'RESCUE' || packet.mission.phase === 'EXTRACT') {
+    return {
+      observations: 'Mock: survivor marked; extracting along the mapped route.',
+      map_update: { node_here: null, new_frontiers: [], frontier_updates: [], edge_annotation: null },
+      survivor_assessment: packet.mission.previous_assessment,
+      evidence: { thermal: 1, rgb_person: 1, bearing_deg: 0 },
+      intent: 'RETURN_TO_BASE',
+      action: { type: 'RETURN_TO_BASE' },
+      confidence: 0.9,
+      brief_reason: 'The survivor is marked, so I return to base along the edges I have driven.',
+    };
+  }
+
+  // Stuck against something the thin LiDAR rays do not see (body-width contact): turn to look.
+  const stuck = blocked && /after 0\.0 m/.test(packet.last_result);
+  if (stuck) {
+    const turn = step % 2 === 0 ? 70 : -110;
+    return {
+      observations: `Mock: the last move was blocked immediately by ${/BLOCKED by (\w+)/.exec(packet.last_result)?.[1] ?? 'an obstacle'} the grid does not show; turning ${turn}° to scan.`,
+      map_update: {
+        node_here: packet.pose.at_node ? null : { kind: 'DEAD_END', note: 'Mock: blocked at body contact' },
+        new_frontiers: [],
+        frontier_updates: [],
+        edge_annotation: null,
+      },
+      survivor_assessment: 'NO_EVIDENCE',
+      evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
+      intent: 'SCAN',
+      action: { type: 'MOVE', turn_deg: turn, distance_m: 0 },
+      confidence: 0.4,
+      brief_reason: `I cannot move forward, so I turn ${turn}° in place to look for another way.`,
+    };
+  }
+
+  // Rank columns by clearance; after a blocked move, avoid the columns around the blocked heading.
   const ranked = [...LIDAR_COLUMN_KEYS]
     .map((k) => ({ k, s: columnScore(packet, k) }))
+    .filter((c) => !blocked || Math.abs(Number(c.k)) >= 20)
     .sort((a, b) => b.s - a.s);
   const best = ranked[0];
   const bestM = packet.lidar.level[best.k].m ?? LIDAR_MAX_M;

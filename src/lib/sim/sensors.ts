@@ -20,7 +20,7 @@ import {
   ROVER_RADIUS_M,
   SENSOR_HEIGHT_M,
 } from '../constants';
-import { DEG, dirFromBearing, rayCircle, round, type Vec2 } from '../geo';
+import { DEG, dirFromBearing, rayCircle, rayCircleSpan, round, type Vec2 } from '../geo';
 import type { LidarCell, LidarColumnKey, LidarGrid, LidarHit, LidarRowGrid } from '../types';
 import type { AnimalState } from '../world/animals';
 import type { Obstacle, World } from '../world/terrain';
@@ -71,7 +71,11 @@ function castLevel(origin: Vec2, dir: Vec2, bodies: Body[], h: number, maxM: num
   return best;
 }
 
-/** Ground row: ray from height h pitched down; hits the first body whose top ≥ ray height there, else GROUND. */
+/**
+ * Ground row: ray from height h pitched down. While crossing a body's footprint the ray keeps
+ * descending, so it hits if its height drops to the body's top before it exits the footprint
+ * (low logs right in front of the rover are caught this way). Water always registers. Else GROUND.
+ */
 function castGround(origin: Vec2, dir: Vec2, bodies: Body[], h: number, pitchDeg: number, groundHitM: number): { m: number; hit: LidarHit } {
   const tanP = Math.tan(-pitchDeg * DEG);
   let best: { m: number; hit: LidarHit } = { m: groundHitM, hit: 'GROUND' };
@@ -79,12 +83,29 @@ function castGround(origin: Vec2, dir: Vec2, bodies: Body[], h: number, pitchDeg
     const dx = b.x - origin.x;
     const dz = b.z - origin.z;
     if (dx * dx + dz * dz > (groundHitM + b.r) ** 2) continue;
-    const t = rayCircle(origin, dir, b, b.r);
-    if (t === null || t >= best.m) continue;
-    const rayHeight = h - t * tanP;
-    if (b.hit === 'WATER' || b.top >= rayHeight) best = { m: t, hit: b.hit };
+    const span = rayCircleSpan(origin, dir, b, b.r);
+    if (!span || span.enter >= best.m) continue;
+    if (b.hit === 'WATER') {
+      best = { m: span.enter, hit: b.hit };
+      continue;
+    }
+    const heightAtExit = h - span.exit * tanP;
+    if (heightAtExit > b.top) continue; // the ray clears the body
+    const tHit = Math.max(span.enter, (h - b.top) / tanP);
+    if (tHit < best.m) best = { m: tHit, hit: b.hit };
   }
   return best;
+}
+
+/** World edge = a drop-off (STEEP_SLOPE). Distance along `dir` to the inner boundary, or Infinity. */
+export function boundaryDistance(origin: Vec2, dir: Vec2, halfSize: number, margin = 3): number {
+  const lim = halfSize - margin;
+  let best = Infinity;
+  if (dir.x > 1e-9) best = Math.min(best, (lim - origin.x) / dir.x);
+  if (dir.x < -1e-9) best = Math.min(best, (-lim - origin.x) / dir.x);
+  if (dir.z > 1e-9) best = Math.min(best, (lim - origin.z) / dir.z);
+  if (dir.z < -1e-9) best = Math.min(best, (-lim - origin.z) / dir.z);
+  return Math.max(0, best);
 }
 
 export function computeLidar(world: World, pose: { x: number; z: number; headingDeg: number }, dyn?: DynamicBodies): LidarGrid {
@@ -102,12 +123,15 @@ export function computeLidar(world: World, pose: { x: number; z: number; heading
     for (let i = 0; i < LIDAR_RAYS_PER_CELL; i++) {
       const rel = center - LIDAR_COLUMN_WIDTH_DEG / 2 + ((i + 0.5) / LIDAR_RAYS_PER_CELL) * LIDAR_COLUMN_WIDTH_DEG;
       const dir = dirFromBearing(pose.headingDeg + rel);
-      const l = castLevel(origin, dir, bodies, SENSOR_HEIGHT_M, LIDAR_MAX_M);
+      const edge = boundaryDistance(origin, dir, world.halfSize);
+      let l = castLevel(origin, dir, bodies, SENSOR_HEIGHT_M, LIDAR_MAX_M);
+      if (edge <= LIDAR_MAX_M && (!l || edge < l.m)) l = { m: edge, hit: 'STEEP_SLOPE' };
       if (l && l.m < lvBest) {
         lvBest = l.m;
         lv = { m: round(l.m), hit: l.hit };
       }
-      const g = castGround(origin, dir, bodies, SENSOR_HEIGHT_M, LIDAR_GROUND_PITCH_DEG, groundHitM);
+      let g = castGround(origin, dir, bodies, SENSOR_HEIGHT_M, LIDAR_GROUND_PITCH_DEG, groundHitM);
+      if (edge < g.m) g = { m: edge, hit: 'STEEP_SLOPE' };
       if (g.m < grBest) {
         grBest = g.m;
         gr = { m: round(g.m), hit: g.hit };
@@ -140,6 +164,8 @@ export function forwardClearance(
     const t = rayCircle(pose, dir, b, b.r + ROVER_RADIUS_M);
     if (t !== null && (!best || t < best.m)) best = { m: t, hit: b.hit };
   }
+  const edge = boundaryDistance(pose, dir, world.halfSize);
+  if (edge <= maxM && (!best || edge < best.m)) best = { m: edge, hit: 'STEEP_SLOPE' };
   if (!best) return { freeM: maxM, hit: null };
   return { freeM: Math.max(0, best.m - COLLISION_STOP_M), hit: best.hit };
 }

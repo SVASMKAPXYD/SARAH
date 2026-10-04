@@ -66,6 +66,24 @@ export function rayCircle(origin: Vec2, dir: Vec2, center: Vec2, radius: number)
   return null;
 }
 
+/**
+ * Ray vs circle: entry and exit distances along the ray (both ≥ 0, entry clamped to 0 when
+ * the origin is inside), or null when the ray misses.
+ */
+export function rayCircleSpan(origin: Vec2, dir: Vec2, center: Vec2, radius: number): { enter: number; exit: number } | null {
+  const fx = origin.x - center.x;
+  const fz = origin.z - center.z;
+  const b = 2 * (fx * dir.x + fz * dir.z);
+  const c = fx * fx + fz * fz - radius * radius;
+  const disc = b * b - 4 * c;
+  if (disc < 0) return null;
+  const s = Math.sqrt(disc);
+  const t1 = (-b - s) / 2;
+  const t2 = (-b + s) / 2;
+  if (t2 < 0) return null;
+  return { enter: Math.max(0, t1), exit: t2 };
+}
+
 /** Seeded PRNG (mulberry32). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
