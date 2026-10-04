@@ -76,14 +76,14 @@ export default function Controls({ className = '' }: { className?: string }) {
               className="rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 font-mono text-xs text-zinc-200"
             >
               <option value="api">api (Gemini / mock)</option>
-              <option value="manual">manual console</option>
+              {process.env.NODE_ENV !== 'production' && <option value="manual">manual console</option>}
               <option value="replay" disabled={!replaySource}>
                 replay{replaySource ? ` (${replaySource.entries.length})` : ' — load ?replay=<file>'}
               </option>
             </select>
           </label>
           <Toggle checked={revealTruth} onChange={setRevealTruth} disabled={!finished} label="Reveal truth" />
-          <Toggle checked={devConsole} onChange={setDevConsole} label="Dev console" />
+          {process.env.NODE_ENV !== 'production' && <Toggle checked={devConsole} onChange={setDevConsole} label="Dev console" />}
           <Button size="sm" variant="ghost" onClick={downloadReplay} disabled={replayCount === 0} title="Download this run as a replay log">
             Save replay ({replayCount})
           </Button>

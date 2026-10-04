@@ -75,7 +75,7 @@ export default function Home() {
           {grade && <ResultCard />}
           <AgentPanel className="min-h-[320px] flex-1" />
           <TerrainChat />
-          {devConsole && <ManualConsole />}
+          {process.env.NODE_ENV !== 'production' && devConsole && <ManualConsole />}
         </aside>
       </main>
     </div>
