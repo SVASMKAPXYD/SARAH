@@ -1,163 +1,32 @@
-/**
- * P2 — Decision and TerrainParams schemas (plan §4). Shared by the API, the mock,
- * the manual console and the replay player. Safe to import on the client (no SDK).
- */
+/** Shared API, mock, manual-console, and replay schemas; safe to import on clients. */
 import { z } from 'zod';
 
-export const NodeKindSchema = z.enum(['JUNCTION', 'VIEWPOINT', 'DEAD_END', 'EVIDENCE', 'SURVIVOR']);
-export const FrontierGeometrySchema = z.enum(['CLEAR', 'NARROW', 'UNCERTAIN']);
-export const FrontierUpdateStatusSchema = z.enum(['TRAVERSED', 'BLOCKED']);
-export const TerrainKindSchema = z.enum(['TRAIL', 'FOREST', 'SLOPE', 'BRIDGE']);
-export const AssessmentSchema = z.enum(['NO_EVIDENCE', 'POSSIBLE', 'LIKELY', 'CONFIRMED_CANDIDATE']);
-export const IntentSchema = z.enum([
-  'EXPLORE_FRONTIER',
-  'FOLLOW_KNOWN_ROUTE',
-  'INVESTIGATE_THERMAL_LEAD',
-  'SCAN',
-  'APPROACH_CANDIDATE',
-  'MARK_SURVIVOR',
-  'RETURN_TO_BASE',
-]);
-export const ActionTypeSchema = z.enum(['MOVE', 'MARK_SURVIVOR']);
-
-export const MapUpdateSchema = z.object({
-  node_here: z.object({ kind: NodeKindSchema, note: z.string() }).nullable(),
-  new_frontiers: z.array(
-    z.object({
-      bearing_deg: z.number(),
-      estimated_distance_m: z.number(),
-      geometry: FrontierGeometrySchema,
-      note: z.string(),
-    }),
-  ),
-  frontier_updates: z.array(z.object({ id: z.string(), status: FrontierUpdateStatusSchema })),
-  edge_annotation: z.object({ terrain: TerrainKindSchema, hazard_cost: z.number() }).nullable(),
-});
-
-export const ActionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('MOVE'), turn_deg: z.number(), distance_m: z.number() }),
-  z.object({ type: z.literal('MARK_SURVIVOR') }),
-]);
+export const MEMORY_MAX_CHARS = 24_000;
 
 export const DecisionSchema = z.object({
-  observations: z.string(),
-  map_update: MapUpdateSchema,
-  survivor_assessment: AssessmentSchema,
-  evidence: z.object({
-    thermal: z.number(),
-    rgb_person: z.number(),
-    bearing_deg: z.number().nullable(),
-  }),
-  intent: IntentSchema,
-  action: ActionSchema,
-  confidence: z.number(),
-  brief_reason: z.string(),
-});
+  bearing_deg: z.number().min(0).max(360),
+  distance_m: z.number().min(0).max(15),
+  reason: z.string().min(1).max(500),
+  mark_survivor: z.boolean().optional(),
+  replace_entire_memory: z.string().max(MEMORY_MAX_CHARS),
+}).strict();
 
 export type Decision = z.infer<typeof DecisionSchema>;
-export type MapUpdate = z.infer<typeof MapUpdateSchema>;
-export type DecisionAction = z.infer<typeof ActionSchema>;
 
-/**
- * JSON Schema for Gemini `response_format` — plan §4 "Decision schema", verbatim.
- */
+/** Minimal movement response; every decision supplies the complete replacement memory. */
 export const DecisionJsonSchema = {
   type: 'object',
   properties: {
-    observations: {
+    bearing_deg: { type: 'number', minimum: 0, maximum: 360, description: 'Absolute compass bearing; 0 is north and clockwise is positive.' },
+    distance_m: { type: 'number', minimum: 0, maximum: 15, description: 'Distance to travel; zero turns in place.' },
+    reason: { type: 'string', description: 'Brief reason for this movement.' },
+    mark_survivor: { type: 'boolean', description: 'Optional. If true, mark the current position and do not move this turn.' },
+    replace_entire_memory: {
       type: 'string',
-      description: 'Max 2 sentences: what RGB, thermal and the LiDAR grid jointly show, with bearings.',
+      description: 'REQUIRED: The complete new contents of SARAH memory after this decision. This OVERWRITES the entire current memory file. Return the old memory in full, preserving useful information, plus any changes. Never return only new notes, an append, a patch, or instructions. To keep memory unchanged, copy the complete input memory exactly. Empty string intentionally clears memory. Maximum 24000 characters.',
     },
-    map_update: {
-      type: 'object',
-      properties: {
-        node_here: {
-          type: ['object', 'null'],
-          properties: {
-            kind: { type: 'string', enum: ['JUNCTION', 'VIEWPOINT', 'DEAD_END', 'EVIDENCE', 'SURVIVOR'] },
-            note: { type: 'string' },
-          },
-          required: ['kind', 'note'],
-        },
-        new_frontiers: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              bearing_deg: { type: 'number' },
-              estimated_distance_m: { type: 'number' },
-              geometry: { type: 'string', enum: ['CLEAR', 'NARROW', 'UNCERTAIN'] },
-              note: { type: 'string' },
-            },
-            required: ['bearing_deg', 'estimated_distance_m', 'geometry', 'note'],
-          },
-        },
-        frontier_updates: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' },
-              status: { type: 'string', enum: ['TRAVERSED', 'BLOCKED'] },
-            },
-            required: ['id', 'status'],
-          },
-        },
-        edge_annotation: {
-          type: ['object', 'null'],
-          properties: {
-            terrain: { type: 'string', enum: ['TRAIL', 'FOREST', 'SLOPE', 'BRIDGE'] },
-            hazard_cost: { type: 'number' },
-          },
-          required: ['terrain', 'hazard_cost'],
-        },
-      },
-      required: ['node_here', 'new_frontiers', 'frontier_updates', 'edge_annotation'],
-    },
-    survivor_assessment: { type: 'string', enum: ['NO_EVIDENCE', 'POSSIBLE', 'LIKELY', 'CONFIRMED_CANDIDATE'] },
-    evidence: {
-      type: 'object',
-      properties: {
-        thermal: { type: 'number' },
-        rgb_person: { type: 'number' },
-        bearing_deg: { type: ['number', 'null'] },
-      },
-      required: ['thermal', 'rgb_person', 'bearing_deg'],
-    },
-    intent: {
-      type: 'string',
-      enum: [
-        'EXPLORE_FRONTIER',
-        'FOLLOW_KNOWN_ROUTE',
-        'INVESTIGATE_THERMAL_LEAD',
-        'SCAN',
-        'APPROACH_CANDIDATE',
-        'MARK_SURVIVOR',
-        'RETURN_TO_BASE',
-      ],
-    },
-    action: {
-      type: 'object',
-      properties: {
-        type: { type: 'string', enum: ['MOVE', 'MARK_SURVIVOR'] },
-        turn_deg: { type: 'number', description: 'MOVE only, -180..180, positive = right.' },
-        distance_m: { type: 'number', description: 'MOVE only, 0..15. 0 = turn in place to look.' },
-      },
-      required: ['type'],
-    },
-    confidence: { type: 'number', description: '0..1 that this action advances the mission.' },
-    brief_reason: { type: 'string', description: 'One sentence, first person, for the operator.' },
   },
-  required: [
-    'observations',
-    'map_update',
-    'survivor_assessment',
-    'evidence',
-    'intent',
-    'action',
-    'confidence',
-    'brief_reason',
-  ],
+  required: ['bearing_deg', 'distance_m', 'reason', 'replace_entire_memory'],
 } as const;
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 'use client';
 /**
- * Thought transcript: real decision / narration / result lines from the mission feed,
+ * Reasoning stream: model summaries, concise decision rationales, and simulator feedback,
  * newest at the bottom. While a run is active and nothing new has arrived, a short
  * status line is derived from the live sim (phase, distance, last result) on a
  * 5–15s cadence. Paused runs and a quiet mock decider do not get filler text.
@@ -8,32 +8,15 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import type { FeedEntry } from '@/lib/types';
 import { useMissionStore, type MissionState } from '@/store/missionStore';
-import PlaceGraph from '@/components/panels/PlaceGraph';
 
-type ThoughtTab = 'transcript' | 'graph';
+type ThoughtTab = 'transcript' | 'memory';
 
 type Line = { id: string; t: number; kind: string; text: string };
 
 function feedText(e: FeedEntry): string {
   if (e.kind === 'decision' && e.decision) {
-    const d = e.decision;
-    const action = d.action.type === 'MOVE'
-      ? `MOVE ${d.action.turn_deg ?? 0}° / ${d.action.distance_m ?? 0} m`
-      : d.action.type;
-    const updates = [
-      d.map_update.node_here ? `${d.map_update.node_here.kind} node (${d.map_update.node_here.note})` : '',
-      ...d.map_update.new_frontiers.map((f) => `frontier ${f.bearing_deg}° / ${f.estimated_distance_m} m`),
-      ...d.map_update.frontier_updates.map((f) => `${f.id} → ${f.status}`),
-      d.map_update.edge_annotation ? `edge ${d.map_update.edge_annotation.terrain}, hazard ${d.map_update.edge_annotation.hazard_cost}` : '',
-    ].filter(Boolean);
-    return [
-      `Observations: ${d.observations}`,
-      `Assessment: ${d.survivor_assessment}; intent: ${d.intent}`,
-      `Evidence: thermal ${d.evidence.thermal}; RGB person ${d.evidence.rgb_person}; bearing ${d.evidence.bearing_deg ?? 'none'}`,
-      `Map update: ${updates.length ? updates.join('; ') : 'none'}`,
-      `Action: ${action}. Reason: ${d.brief_reason}`,
-      e.model ? `Model: ${e.model}` : '',
-    ].filter(Boolean).join('\n');
+    const { reason } = e.decision;
+    return reason;
   }
   if (e.kind === 'thought' && e.thought) return e.thought;
   return e.text;
@@ -57,12 +40,13 @@ const TONE: Record<string, string> = {
 };
 
 const TABS: { id: ThoughtTab; label: string }[] = [
-  { id: 'transcript', label: 'Thoughts' },
-  { id: 'graph', label: 'Place graph' },
+  { id: 'transcript', label: 'Reasoning' },
+  { id: 'memory', label: 'Memory' },
 ];
 
 export default function ThoughtPanel({ hud = false }: { hud?: boolean }) {
   const feed = useMissionStore((s) => s.feed);
+  const memory = useMissionStore((s) => s.memory);
   const status = useMissionStore((s) => s.status);
   const error = useMissionStore((s) => s.error);
   const [tab, setTab] = useState<ThoughtTab>('transcript');
@@ -148,12 +132,12 @@ export default function ThoughtPanel({ hud = false }: { hud?: boolean }) {
   return (
     <section
       className={`flex h-full min-h-0 flex-col overflow-hidden ${hud ? 'text-cyan-50' : 'rounded-md border border-[#8ea3b8] bg-[#d5e6f7]'}`}
-      aria-label="Robot's thought process"
+      aria-label="Reasoning stream"
     >
       <h2 className={`shrink-0 truncate px-3 pt-2 text-left text-xs font-semibold uppercase tracking-[0.18em] ${hud ? 'text-cyan-100 drop-shadow-[0_0_8px_rgba(34,211,238,0.7)]' : 'text-slate-800'}`}>
-        Decision trace
+        Reasoning stream
       </h2>
-      <div role="tablist" aria-label="Thought process views" className="flex shrink-0 gap-1 px-2 pb-1 pt-2" onKeyDown={onTabKey}>
+      <div role="tablist" aria-label="Reasoning and memory views" className="flex shrink-0 gap-1 px-2 pb-1 pt-2" onKeyDown={onTabKey}>
         {TABS.map((t) => {
           const selected = tab === t.id;
           return (
@@ -189,21 +173,31 @@ export default function ThoughtPanel({ hud = false }: { hud?: boolean }) {
           ref={scroller}
           className="absolute inset-0 overflow-y-auto px-3 pb-2"
         >
-          <div ref={content} role="log" aria-label="Thought transcript">
-            {lines.length === 0 && <p className={`py-6 text-center text-sm ${hud ? 'text-cyan-100/55' : 'text-slate-500'}`}>Thoughts will show up here during a run.</p>}
+          <div ref={content} role="log" aria-label="Model summaries and decision rationales">
+            {lines.length === 0 && <p className={`py-6 text-center text-sm ${hud ? 'text-cyan-100/55' : 'text-slate-500'}`}>Model summaries and decision rationales will appear here during a run.</p>}
+            {lines.length > 0 && (
+              <p className={`pb-2 pt-1 text-[10px] ${hud ? 'text-cyan-100/55' : 'text-slate-500'}`}>
+                A live operator-side stream across fresh, independent turns. Model summaries
+                are optional and are not a full private reasoning transcript; this stream is
+                not sent back to the model.
+              </p>
+            )}
             {lines.map((line) => (
               <p key={line.id} className={`whitespace-pre-line border-t py-2 text-[13px] leading-snug first:border-t-0 ${hud
                 ? 'border-cyan-100/10 drop-shadow-[0_0_7px_rgba(103,232,249,0.28)]'
                 : 'border-slate-400/25'} ${hud
                   ? line.kind === 'error' ? 'text-rose-300' : line.kind === 'system' ? 'text-cyan-100/60' : line.kind === 'thought' ? 'italic text-cyan-100/90' : line.kind === 'result' ? 'text-emerald-200' : 'text-cyan-50'
                   : TONE[line.kind] ?? 'text-slate-800'}`}>
+                {line.kind === 'thought' && <span className="mr-1 font-semibold not-italic">Model summary:</span>}
+                {line.kind === 'decision' && <span className="mr-1 font-semibold not-italic">Rationale:</span>}
+                {line.kind === 'result' && <span className="mr-1 font-semibold not-italic">Simulator:</span>}
                 {line.text}
               </p>
             ))}
           </div>
         </div>
-        <div id="thought-panel-graph" role="tabpanel" aria-labelledby="thought-tab-graph" hidden={tab !== 'graph'} className="absolute inset-0">
-          <PlaceGraph hud={hud} />
+        <div id="thought-panel-memory" role="tabpanel" aria-labelledby="thought-tab-memory" hidden={tab !== 'memory'} className={`absolute inset-0 overflow-y-auto p-3 font-mono text-xs ${hud ? 'text-cyan-50' : 'text-slate-800'}`}>
+          <pre className="whitespace-pre-wrap break-words">{memory || '(memory is empty)'}</pre>
         </div>
       </div>
       {waiting && <p className={`shrink-0 px-3 pb-2 text-[11px] ${hud ? 'text-amber-200 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-slate-600'}`}>Waiting for the next decision…</p>}

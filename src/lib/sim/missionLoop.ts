@@ -1,35 +1,33 @@
 /**
  * P3 — MissionController: the one place that writes the sim fields of the mission store.
  *
- *   start → world from (seed, params) → BASE node → loop:
- *     tick animals + sensors (LiDAR @ 1 Hz, capture request to the SensorRig)
+ *   start → world from (seed, params) → loop:
+ *     tick animals + sensors (capture request to the SensorRig)
  *     action in progress?  → executor tick (4 m/s, 180°/s, collision stop)
- *     action complete?     → build packet, grab latest RGB/thermal (or a placeholder),
+ *     action complete?     → build packet, grab aligned RGB/thermal/depth,
  *                            ask the decider (api | manual | replay), validate, apply
- *                            map_update, derive phase, execute the model's action,
+ *                            memory replacement, execute the model's action,
  *                            record replay entry, append feed
- *   until budget exhausted / EXTRACT reaches BASE / error → grade → complete | failed.
+ *   until budget exhausted / marked rover reaches BASE / error → grade → complete | failed.
  *
  * No local code selects routes or applies rescue-evidence gates. Only action shape and
  * physical simulation constrain the model; grading uses hidden truth after the run.
  */
-import { AT_NODE_RADIUS_M, COLLISION_CLEARANCE_MAX_M, DECISION_BUDGET, SENSOR_HEIGHT_M, SENSOR_TICK_HZ } from '../constants';
+import { DECISION_BUDGET, SENSOR_TICK_HZ } from '../constants';
 import { DecisionSchema, parseTerrainParams } from '../gemini/schema';
 import { distance } from '../geo';
-import type { DecideResponse, Decision, FeedEntry, ObservationPacket, Phase, ReplayLog, TerrainParams } from '../types';
+import type { DecideResponse, Decision, FeedEntry, ObservationPacket, ReplayLog, TerrainParams } from '../types';
 import { initAnimals, stepAnimals } from '../world/animals';
 import { generateWorld } from '../world/terrain';
 import { planAction, startExecution, tickExecution, type ActionPlan } from './executor';
 import { gradeMission } from './grading';
-import { applyMapUpdate, createMapState, nodeAt } from './mapStore';
 import { buildPacket } from './packetBuilder';
-import { derivePhase, phaseAfterExecution } from './phase';
 import { createReplayLog, hashPacket, loadReplay, recordEntry, ReplayPlayer, serializeReplay } from './replay';
-import { collisionClearanceInFront, type DynamicBodies } from './collisions';
+import type { DynamicBodies } from './collisions';
 import { initialRover, useMissionStore, type DeciderMode, type DecisionSource, type MissionState } from '@/store/missionStore';
 
 const TICK_MS = 50;
-const TRACE_SPACING_M = 0.5;
+const PATH_SAMPLE_SPACING_M = 0.5;
 
 export class MissionController {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -91,11 +89,7 @@ export class MissionController {
     this.set({
       animals: world ? initAnimals(world) : [],
       rover,
-      map: createMapState(),
-      lastNodeId: 'BASE',
-      trace: [],
-      drivenPath: [],
-      traceMinClearanceM: COLLISION_CLEARANCE_MAX_M,
+      drivenPath: [{ x: rover.x, z: rover.z }],
       distanceTraveledM: 0,
       exec: null,
       status: 'idle',
@@ -111,8 +105,7 @@ export class MissionController {
       lastTokens: null,
       totalTokens: 0,
       lastResult: 'Mission start at BASE. No actions yet.',
-      previousAssessment: 'NO_EVIDENCE',
-      decisions: [],
+      memory: '',
       feed: [],
       markPosition: null,
       grade: null,
@@ -248,18 +241,7 @@ export class MissionController {
   private sensorTick() {
     const s = this.s;
     if (!s.world) return;
-    const moving = s.exec !== null && s.exec.stage === 'DRIVE';
-    const clearance = collisionClearanceInFront(
-      s.world,
-      s.rover,
-      this.dyn(),
-      COLLISION_CLEARANCE_MAX_M,
-      SENSOR_HEIGHT_M,
-    );
-    this.set({
-      captureRequest: s.captureRequest + 1,
-      traceMinClearanceM: moving ? Math.min(s.traceMinClearanceM, clearance) : s.traceMinClearanceM,
-    });
+    this.set({ captureRequest: s.captureRequest + 1 });
   }
 
   // ------------------------------------------------------------------ executor
@@ -268,46 +250,37 @@ export class MissionController {
     if (!s.world || !s.exec) return;
     const r = tickExecution(s.exec, s.rover, s.world, this.dyn(), dt);
     const pose = r.pose;
-    const trace = s.trace;
-    const last = trace[trace.length - 1];
     const point = { x: pose.x, z: pose.z };
-    const newTrace = r.movedM > 0 && (!last || distance(last, pose) >= TRACE_SPACING_M) ? [...trace, point] : trace;
     const path = s.drivenPath;
     const pathLast = path[path.length - 1];
-    const drivenPath = r.movedM > 0 && (!pathLast || distance(pathLast, pose) >= TRACE_SPACING_M) ? [...path, point] : path;
-    const at = nodeAt(s.map, pose, AT_NODE_RADIUS_M);
-    const rover = { ...s.rover, x: pose.x, z: pose.z, headingDeg: pose.headingDeg, currentNode: at?.id ?? null };
-    this.set({ rover, exec: r.exec, trace: newTrace, drivenPath, distanceTraveledM: s.distanceTraveledM + r.movedM });
+    const drivenPath = r.movedM > 0 && (!pathLast || distance(pathLast, pose) >= PATH_SAMPLE_SPACING_M) ? [...path, point] : path;
+    const rover = { ...s.rover, x: pose.x, z: pose.z, headingDeg: pose.headingDeg };
+    this.set({ rover, exec: r.exec, drivenPath, distanceTraveledM: s.distanceTraveledM + r.movedM });
     if (r.done) this.onActionDone(r.exec.plan, r.lastResult ?? '');
   }
 
   private onActionDone(plan: ActionPlan, lastResult: string) {
     const s = this.s;
     if (!s.world) return;
-    let phase: Phase = s.rover.phase;
-    let trace = s.trace;
     let drivenPath = s.drivenPath;
     let markPosition = s.markPosition;
     const rover = { ...s.rover };
 
-    // final pose always closes the segment trace and the full-run trail
-    const lastPt = trace[trace.length - 1];
-    if (!lastPt || distance(lastPt, rover) > 0.05) trace = [...trace, { x: rover.x, z: rover.z }];
+    // Record the endpoint even when the action is shorter than trace sampling.
     const pathLast = drivenPath[drivenPath.length - 1];
     if (!pathLast || distance(pathLast, rover) > 0.05) drivenPath = [...drivenPath, { x: rover.x, z: rover.z }];
 
     if (plan.kind === 'MARK') {
       markPosition = { x: rover.x, z: rover.z };
-      phase = phaseAfterExecution(phase, { markRecorded: true });
-    } else if (phase === 'EXTRACT' && distance(rover, s.world.base) <= 1.5) {
-      phase = phaseAfterExecution(phase, { arrivedAtBase: true });
+      rover.phase = 'EXTRACT';
+    } else if (markPosition && distance(rover, s.world.base) <= 1.5) {
+      rover.phase = 'COMPLETE';
     }
-    rover.phase = phase;
 
-    this.set({ rover, trace, drivenPath, markPosition, lastResult, exec: null, needsDecision: true });
+    this.set({ rover, drivenPath, markPosition, lastResult, exec: null, needsDecision: true });
     this.feed('result', lastResult);
 
-    if (phase === 'COMPLETE') this.finish('complete');
+    if (rover.phase === 'COMPLETE') this.finish('complete');
   }
 
   // ------------------------------------------------------------------ decisions
@@ -323,16 +296,13 @@ export class MissionController {
 
   private buildCurrentPacket(): ObservationPacket {
     const s = this.s;
-    const at = nodeAt(s.map, s.rover, AT_NODE_RADIUS_M);
     return buildPacket({
       phase: s.rover.phase,
       step: s.rover.step,
       decisionsUsed: s.rover.decisionsUsed,
       distanceTraveledM: s.distanceTraveledM,
-      previousAssessment: s.previousAssessment,
       pose: s.rover,
-      atNode: at?.id ?? null,
-      map: s.map,
+      memory: s.memory,
       lastResult: s.lastResult,
       budget: s.budget,
     });
@@ -422,51 +392,18 @@ export class MissionController {
     const step = s.rover.step + 1;
     const decisionsUsed = s.rover.decisionsUsed + 1;
 
-    // 1. map_update + evidence → store
-    const at = nodeAt(s.map, s.rover, AT_NODE_RADIUS_M);
-    const applied = applyMapUpdate(s.map, decision, {
-      pose: s.rover,
-      prevNodeId: s.lastNodeId,
-      currentNodeId: at?.id ?? null,
-      trace: s.trace,
-      minClearanceM: s.traceMinClearanceM,
-    });
-    const map = applied.map;
-    let lastNodeId = s.lastNodeId;
-    let trace = s.trace;
-    let traceMinClearanceM = s.traceMinClearanceM;
-    let currentNode: string | null = at?.id ?? null;
-    if (applied.nodeHereId) {
-      currentNode = applied.nodeHereId;
-      lastNodeId = applied.nodeHereId;
-      trace = [];
-      traceMinClearanceM = COLLISION_CLEARANCE_MAX_M;
-    } else if (currentNode && currentNode !== lastNodeId) {
-      lastNodeId = currentNode;
-      trace = [];
-      traceMinClearanceM = COLLISION_CLEARANCE_MAX_M;
-    }
-
-    // 2. phase from intent
-    const phase = derivePhase(s.rover.phase, decision);
-
-    // 3. execute Gemini's action; only the simulator enforces physical constraints.
-    const rover = { ...s.rover, step, decisionsUsed, currentNode, phase };
+    const phase = decision.mark_survivor ? 'EXTRACT' : s.rover.phase;
+    const rover = { ...s.rover, step, decisionsUsed, phase };
     const plan = planAction(decision);
     const exec = startExecution(plan, rover);
 
-    // 4. replay record
     const replayLog = s.replayLog
       ? recordEntry(s.replayLog, { seed: s.seed, step, packetHash: hashPacket(packet), decision, thought: meta.thought, model: meta.model, latencyMs: meta.latencyMs })
       : s.replayLog;
 
     const keepPaused = this.s.status === 'paused';
     this.set({
-      map,
       rover,
-      lastNodeId,
-      trace,
-      traceMinClearanceM,
       exec,
       status: keepPaused ? 'paused' : 'running',
       pausedFrom: keepPaused ? 'running' : null,
@@ -477,21 +414,18 @@ export class MissionController {
       totalTokens: s.totalTokens + meta.tokens.total,
       lastSource: meta.source,
       lastModel: meta.model,
-      previousAssessment: decision.survivor_assessment,
-      decisions: [...s.decisions, decision],
+      memory: decision.replace_entire_memory,
       replayLog,
       error: null,
     });
 
-    const a = decision.action;
-    const actionText =
-      a.type === 'MOVE'
-        ? `MOVE turn ${a.turn_deg ?? 0}°, ${a.distance_m ?? 0} m`
-        : a.type;
+    const actionText = decision.mark_survivor
+      ? 'MARK_SURVIVOR at current position'
+      : `MOVE bearing ${Math.round(decision.bearing_deg)}°, ${decision.distance_m} m`;
     if (meta.thought) this.feed('thought', meta.thought, { thought: meta.thought, source: meta.source });
-    this.feed('decision', `[${decision.intent}] ${decision.brief_reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
-    if (applied.nodeHereId && decision.map_update.node_here) {
-      this.feed('system', `Declared ${applied.nodeHereId} (${decision.map_update.node_here.kind})${applied.edgeId ? `, closed edge ${applied.edgeId}` : ''}.`);
+    this.feed('decision', `${decision.reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
+    if (decision.replace_entire_memory !== s.memory) {
+      this.feed('system', 'Gemini replaced its persistent memory.');
     }
     // MARK plans have no motion: resolve them now so last_result is reported and
     // the loop asks for the next decision instead of stalling on a DONE executor.
@@ -514,12 +448,10 @@ export class MissionController {
     this.stopTimer();
     const grade = gradeMission({
       world: s.world,
-      map: s.map,
       markPosition: s.markPosition,
       decisionsUsed: s.rover.decisionsUsed,
       budget: s.budget,
       distanceTraveledM: s.distanceTraveledM,
-      decisions: s.decisions,
       roverPos: s.rover,
     });
     const final = status === 'complete' && !grade.success ? 'failed' : status;

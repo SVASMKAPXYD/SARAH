@@ -23,8 +23,7 @@ export default function MetricsStrip({ className = '' }: { className?: string })
   const model = useMissionStore((s) => s.lastModel);
   const lastTokens = useMissionStore((s) => s.lastTokens);
   const totalTokens = useMissionStore((s) => s.totalTokens);
-  const nodes = useMissionStore((s) => s.map.nodes.length);
-  const frontiers = useMissionStore((s) => s.map.frontiers.filter((f) => f.status === 'UNEXPLORED').length);
+  const memoryLength = useMissionStore((s) => s.memory.length);
   const status = useMissionStore((s) => s.status);
 
   return (
@@ -36,7 +35,7 @@ export default function MetricsStrip({ className = '' }: { className?: string })
       <Metric label="Latency" value={latency === null ? '—' : `${latency} ms`} />
       <Metric label="Model" value={model ?? '—'} />
       <Metric label="Tokens" value={lastTokens ? String(lastTokens.total) : '—'} sub={`Σ ${totalTokens}`} />
-      <Metric label="Map" value={`${nodes} n`} sub={`${frontiers} open`} />
+      <Metric label="Memory" value={`${memoryLength}`} sub="chars" />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # SARAH — Search And Rescue Autonomous Helper
 
-SARAH is a simulated night-forest search rover. Gemini reads aligned RGB, thermal, and per-pixel hue-encoded depth images plus its own topological graph memory; it authors map updates and chooses every turn and movement, including backtracking and return. Local code simulates the world, stores graph data, executes motion with private collision physics, and grades against hidden truth. It does not plan routes or gate survivor marks.
+SARAH is a simulated night-forest search rover. Gemini reads aligned RGB, thermal, and per-pixel hue-encoded depth images, the 180 m × 180 m forest bounds centered on base, its current pose, the last movement result, and one free-form memory text. It chooses each absolute compass bearing and travel distance, gives a brief reason, and returns `replace_entire_memory` on every turn. That field overwrites the entire stored memory; it is never treated as an append or patch. The prompt explicitly recommends preserving an overall search strategy, the current immediate task, and the past visited path/search coverage with coordinates, observations, and confidence, as well as unresolved leads. Memory replacements are capped at 24,000 characters. Every request is stateless: Gemini receives no prior conversation or retained context, even when consecutive turns use the same model. Local code simulates the world, executes movement with private collision physics, and grades survivor marks against hidden truth; it does not plan routes or gate marks.
 
 The operator can cycle the sensor preview through RGB, thermal, and depth. These aligned views share the front-mounted sensor camera; its lens sits 0.7 m ahead of the rover center to clear the rover body. Sensor frames refresh at 0.5 Hz, with an immediate capture when a decision needs a frame matching the rover's current pose. The decision API uses the latest RGB/thermal/depth triplet that matches the current world and rover pose. Depth is a lossless PNG: hue sweeps from red at 0 m through yellow, green, and cyan to blue just below 35 m; black means no return or 35 m and farther. In third-person mode, depth is rendered live from the chase camera rather than from the rover sensor. Collision stopping remains local simulation physics; no old coarse LiDAR grid or image overlay is sent to Gemini.
 
@@ -28,9 +28,9 @@ The Flash-Lite preference and bounded model-specific fallback are in [`src/lib/g
 
 ## Operator view and replay
 
-The agent panel and thought transcript show the structured observations, assessment/evidence, map update, intent, action, brief reason, and simulator result. The API may also return a thinking summary; that is optional and is not raw chain-of-thought. Metrics show the selected model, latency, and tokens.
+The Agent panel shows the chosen bearing, distance, reason, memory, and exact simulator result. The Reasoning stream presents chronological model-provided summaries when available, concise observation-focused rationales, and simulator feedback without repeating bearing/distance details. It is an operator-side timeline across fresh independent turns, not context passed back to the model. Model summaries are optional and are not a full private chain-of-thought transcript. The Memory tab displays the complete persistent text. Metrics show the selected model, latency, and tokens.
 
-Decisions are recorded for replay without network calls. Use **Save replay**, put the JSON under `public/replays/<name>.json`, then open `/?replay=<name>`. Older logs without model metadata remain readable.
+Decisions (including complete memory replacements) are recorded for replay without network calls. Use **Save replay**, put the JSON under `public/replays/<name>.json`, then open `/?replay=<name>`. Existing version-1 and version-2 replay logs are converted to the current format when loaded.
 
 ## Source of truth
 

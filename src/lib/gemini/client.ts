@@ -1,11 +1,8 @@
 /**
  * P2 — server-only Gemini client (plan §3a, §3f).
  *
- * Uses the @google/genai Interactions API (`ai.interactions.create`) with:
- *   input: [rgb image, thermal image, packet JSON as text]
- *   response_format: DecisionJsonSchema (structured output)
- *   generation_config: { thinking_level: "low", thinking_summaries: "auto" }
- *   media_resolution: "low" (per image part)
+ * Every call is a fresh Interactions API request containing only this decision's
+ * images and packet. No previous interaction or stored context is ever continued.
  *
  * The API key lives only in GEMINI_API_KEY. Never import this file from client code.
  * TODO(P2): smoke-test the Interactions request against a live Gemini project.
@@ -15,6 +12,7 @@ import { GoogleGenAI } from '@google/genai';
 import { DECISION_BUDGET } from '../constants';
 import type { Decision, ObservationPacket, TerrainParams } from '../types';
 import { buildSystemInstruction, TERRAIN_INSTRUCTION } from './prompt';
+import { buildFreshDecisionInteraction } from './interactionRequest';
 import { GEMINI_MODEL_PREFERENCE, modelFallbackReason, preferredAvailableModels, rememberUnavailableModel } from './modelRouting';
 import {
   DecisionJsonSchema,
@@ -117,12 +115,7 @@ async function structuredCall(args: {
 }): Promise<{ text: string; thought: string; tokens: GeminiDecideResult['tokens'] }> {
   const ai = getClient();
   const interaction = (await ai.interactions.create({
-    model: args.model,
-    system_instruction: args.system,
-    input: args.input,
-    response_format: { type: 'text', mime_type: 'application/json', schema: args.schema },
-    generation_config: { thinking_level: 'low', thinking_summaries: 'auto' },
-    store: false,
+    ...buildFreshDecisionInteraction(args),
   })) as unknown as InteractionLike;
   return {
     text: stripFences(extractOutputText(interaction)),
@@ -145,10 +138,10 @@ export async function geminiDecide(
   const t0 = Date.now();
   const system = buildSystemInstruction(budget);
   const baseInput: Array<ImageInput | TextInput> = [
-    { type: 'image', data: rgbB64, mime_type: 'image/jpeg', resolution: 'low' },
-    { type: 'image', data: thermalB64, mime_type: 'image/jpeg', resolution: 'low' },
-    { type: 'image', data: depthPngB64, mime_type: 'image/png', resolution: 'low' },
-    { type: 'text', text: `Three images in order: visible-light RGB JPEG, aligned thermal JPEG, and aligned lossless hue-encoded LiDAR depth PNG. Decode depth only using the calibration in the observation packet.\nObservation packet:\n${JSON.stringify(packet)}` },
+    { type: 'image', data: rgbB64, mime_type: 'image/jpeg', resolution: 'high' },
+    { type: 'image', data: thermalB64, mime_type: 'image/jpeg', resolution: 'high' },
+    { type: 'image', data: depthPngB64, mime_type: 'image/png', resolution: 'high' },
+    { type: 'text', text: `Three images in order: visible-light RGB JPEG, aligned thermal JPEG, and aligned lossless hue-encoded depth PNG. The packet below contains your complete current input, including your only persistent memory. No earlier interaction is available.\nObservation packet:\n${JSON.stringify(packet)}` },
   ];
 
   let lastError = '';
@@ -165,7 +158,10 @@ export async function geminiDecide(
       const input =
         attempt === 0
           ? baseInput
-          : [...baseInput, { type: 'text' as const, text: `Your previous output failed validation: ${correction}. Return JSON matching the schema exactly.` }];
+          : [...baseInput, {
+              type: 'text' as const,
+              text: `Your previous output failed validation: ${correction}. Return JSON matching the schema exactly. replace_entire_memory is required and must contain the complete replacement file contents, not only new notes or a patch.`,
+            }];
       let res: Awaited<ReturnType<typeof structuredCall>>;
       try {
         res = await structuredCall({ model, system, input, schema: DecisionJsonSchema as unknown as Record<string, unknown> });

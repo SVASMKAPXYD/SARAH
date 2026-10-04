@@ -19,18 +19,12 @@ export default function ResultCard({ className = '' }: { className?: string }) {
           <dd>{grade.distanceErrorM === null ? '—' : `${grade.distanceErrorM.toFixed(1)} m`}</dd>
           <dt className="text-zinc-500">decisions used</dt>
           <dd>{grade.decisionsUsed}</dd>
-          <dt className="text-zinc-500">leads investigated</dt>
-          <dd>{grade.leadsInvestigated}</dd>
           <dt className="text-zinc-500">distance traveled</dt>
           <dd>{grade.distanceTraveledM.toFixed(1)} m</dd>
-          <dt className="text-zinc-500">nodes / frontiers</dt>
-          <dd>
-            {grade.nodesDeclared} / {grade.frontiersDeclared}
-          </dd>
           <dt className="text-zinc-500">returned to base</dt>
           <dd>{grade.returnedToBase ? 'yes' : 'no'}</dd>
         </dl>
-        <p className="text-[10px] text-zinc-500">Toggle “Reveal truth” in Controls to compare Gemini&apos;s map with the real world.</p>
+        <p className="text-[10px] text-zinc-500">Toggle “Reveal truth” in Controls to compare the rover path with the real world.</p>
       </CardBody>
     </Card>
   );

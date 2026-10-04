@@ -1,86 +1,23 @@
-/**
- * SARAH shared types — the P1↔P2↔P3↔P4 contract (plan §3b, §3c, §4; spec §4 types kept).
- * Frame conventions: see constants.ts header.
- */
-import type { Decision, MapUpdate, TerrainParams } from './gemini/schema';
+/** Shared SARAH types. Frame conventions: see constants.ts. */
+import type { Decision, TerrainParams } from './gemini/schema';
 import type { SensorCalibration } from './sim/depth';
 
-export type { Decision, MapUpdate, TerrainParams };
-
-// ---------------------------------------------------------------------------
-// Map (spec §4 types, Gemini-authored)
-// ---------------------------------------------------------------------------
-
-export type NodeKind = 'BASE' | 'JUNCTION' | 'VIEWPOINT' | 'DEAD_END' | 'EVIDENCE' | 'SURVIVOR';
-export type Assessment = 'NO_EVIDENCE' | 'POSSIBLE' | 'LIKELY' | 'CONFIRMED_CANDIDATE';
-export type TerrainKind = 'TRAIL' | 'FOREST' | 'SLOPE' | 'BRIDGE';
-
-export interface TopoNode {
-  id: string;
-  x: number;
-  z: number;
-  kind: NodeKind;
-  visited: boolean;
-  note?: string;
-  lastAssessment?: Assessment;
-  thermalScore?: number;
-  rgbPersonScore?: number;
-}
-
-export interface TopoEdge {
-  id: string;
-  from: string;
-  to: string;
-  /** Actual positions driven (recorded from motion). */
-  polyline: { x: number; z: number }[];
-  lengthM: number;
-  bearingDeg: number;
-  minClearanceM: number;
-  safe: boolean;
-  terrain?: TerrainKind;
-  hazardCost: number;
-}
-
-export type FrontierGeometry = 'CLEAR' | 'NARROW' | 'UNCERTAIN';
-export type FrontierStatus = 'UNEXPLORED' | 'TRAVERSED' | 'BLOCKED';
-
-export interface Frontier {
-  id: string;
-  fromNode: string;
-  bearingDeg: number;
-  estimatedDistanceM: number;
-  geometry: FrontierGeometry;
-  status: FrontierStatus;
-  note: string;
-}
-
-export interface MapState {
-  nodes: TopoNode[];
-  edges: TopoEdge[];
-  frontiers: Frontier[];
-  nextNodeIndex: number;
-  nextEdgeIndex: number;
-  nextFrontierIndex: number;
-}
+export type { Decision, TerrainParams };
 
 // ---------------------------------------------------------------------------
 // Rover / mission
 // ---------------------------------------------------------------------------
 
-export type Phase = 'SEARCH' | 'INVESTIGATE' | 'CONFIRM' | 'RESCUE' | 'EXTRACT' | 'COMPLETE';
+export type Phase = 'SEARCH' | 'EXTRACT' | 'COMPLETE';
 
 export interface RoverState {
   x: number;
   z: number;
   headingDeg: number;
   phase: Phase;
-  currentNode: string | null;
   step: number;
   decisionsUsed: number;
 }
-
-export type Intent = Decision['intent'];
-export type ActionType = Decision['action']['type'];
 
 // ---------------------------------------------------------------------------
 // Local simulator collision result; never sent to Gemini as a sensor channel.
@@ -89,55 +26,25 @@ export type ActionType = Decision['action']['type'];
 export type CollisionHit = 'TREE' | 'FALLEN_LOG' | 'ROCK' | 'WATER' | 'STEEP_SLOPE' | 'OBSTACLE';
 
 // ---------------------------------------------------------------------------
-// Observation packet (plan §4, sent to Gemini verbatim as JSON text)
+// Observation packet: explicit current inputs only; prior model context is never reused.
 // ---------------------------------------------------------------------------
 
-export interface PacketNode {
-  id: string;
-  x: number;
-  z: number;
-  kind: NodeKind;
-  visited: boolean;
-  note?: string;
-  last_assessment?: Assessment;
-  thermal_score?: number;
-  rgb_person_score?: number;
-  bearing_from_rover_deg: number;
-  distance_m: number;
-}
-
-export interface PacketEdge {
-  id: string;
-  from: string;
-  to: string;
-  length_m: number;
-  bearing_deg: number;
-  safe: boolean;
-  terrain?: TerrainKind;
-  hazard_cost: number;
-}
-
-export interface PacketFrontier {
-  id: string;
-  from_node: string;
-  bearing_deg: number;
-  estimated_distance_m: number;
-  geometry: FrontierGeometry;
-  status: FrontierStatus;
-  note?: string;
-}
-
 export interface ObservationPacket {
+  world: {
+    width_m: number;
+    height_m: number;
+    bounds_m: { min_x: number; max_x: number; min_z: number; max_z: number };
+    base: { x: number; z: number };
+  };
   mission: {
     phase: Phase;
     step: number;
     decisions_remaining: number;
     distance_traveled_m: number;
-    previous_assessment: Assessment;
   };
-  pose: { x: number; z: number; heading_deg: number; at_node: string | null };
+  pose: { x: number; z: number; heading_deg: number };
   sensors: SensorCalibration;
-  map: { nodes: PacketNode[]; edges: PacketEdge[]; frontiers: PacketFrontier[] };
+  memory: string;
   last_result: string;
 }
 
@@ -189,13 +96,14 @@ export interface ReplayEntry {
   step: number;
   packetHash: string;
   decision: Decision;
+  relativeTurnDeg?: number;
   thought: string;
   model: string | null;
   latencyMs: number;
 }
 
 export interface ReplayLog {
-  version: 1;
+  version: 3;
   seed: number;
   params: TerrainParams;
   entries: ReplayEntry[];
@@ -213,10 +121,7 @@ export interface GradeResult {
   markPosition: { x: number; z: number } | null;
   distanceErrorM: number | null;
   decisionsUsed: number;
-  leadsInvestigated: number;
   distanceTraveledM: number;
-  nodesDeclared: number;
-  frontiersDeclared: number;
   returnedToBase: boolean;
   summary: string;
 }

@@ -35,8 +35,6 @@ export const NIGHT_VISIBILITY_EXPOSURE_LIFT = 0.65;
 export const DECISION_BUDGET = 40;
 export const GRADING_RADIUS_M = 3; // mark within this of the true survivor = correct
 export const SURVIVOR_MIN_DIST_FROM_BASE_M = 40;
-export const NODE_MERGE_RADIUS_M = 1.0; // a node declared this close to the current node updates it
-export const AT_NODE_RADIUS_M = 1.0;
 
 // Decoys (plan §2)
 export const FOX_FLEE_RADIUS_M = 6;

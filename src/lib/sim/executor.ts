@@ -4,12 +4,13 @@
  */
 import { MAX_MOVE_M, ROVER_SPEED_MPS, TURN_RATE_DPS } from '../constants';
 import { clamp, dirFromBearing, normDeg, wrapDeg } from '../geo';
+import { normalizeBearing, shortestTurnToBearing } from './movement';
 import type { CollisionHit, Decision, RoverState } from '../types';
 import type { World } from '../world/terrain';
 import { forwardClearance, type DynamicBodies } from './collisions';
 
 export type ActionPlan =
-  | { kind: 'MOVE'; turnDeg: number; distanceM: number }
+  | { kind: 'MOVE'; bearingDeg: number; distanceM: number }
   | { kind: 'MARK'; lastResult: string };
 
 export interface ExecState {
@@ -25,8 +26,7 @@ const fmtDeg = (d: number) => `${Math.round(normDeg(d))}°`;
 const fmtTurn = (d: number) => `${d >= 0 ? '+' : ''}${Math.round(d)}°`;
 
 export function planAction(decision: Decision): ActionPlan {
-  const action = decision.action;
-  if (action.type === 'MARK_SURVIVOR') {
+  if (decision.mark_survivor) {
     return {
       kind: 'MARK',
       lastResult: 'MARK_SURVIVOR recorded at the rover position.',
@@ -34,16 +34,17 @@ export function planAction(decision: Decision): ActionPlan {
   }
   return {
     kind: 'MOVE',
-    turnDeg: clamp(action.turn_deg ?? 0, -180, 180),
-    distanceM: clamp(action.distance_m ?? 0, 0, MAX_MOVE_M),
+    bearingDeg: normDeg(decision.bearing_deg),
+    distanceM: clamp(decision.distance_m, 0, MAX_MOVE_M),
   };
 }
 
 export function startExecution(plan: ActionPlan, rover: RoverState): ExecState {
+  const targetHeadingDeg = plan.kind === 'MOVE' ? normalizeBearing(plan.bearingDeg) : rover.headingDeg;
   return {
     plan,
     stage: plan.kind === 'MOVE' ? 'TURN' : 'DONE',
-    targetHeadingDeg: plan.kind === 'MOVE' ? normDeg(rover.headingDeg + plan.turnDeg) : rover.headingDeg,
+    targetHeadingDeg,
     startHeadingDeg: rover.headingDeg,
     drivenM: 0,
     blockedBy: null,
@@ -89,7 +90,7 @@ export function tickExecution(
         pose,
         movedM,
         done: true,
-        lastResult: `TURNED ${fmtTurn(plan.turnDeg)}, heading now ${fmtDeg(pose.headingDeg)} (no move)`,
+        lastResult: `TURNED ${fmtTurn(shortestTurnToBearing(e.startHeadingDeg, e.targetHeadingDeg))}, heading now ${fmtDeg(pose.headingDeg)} (no move)`,
       };
     }
   }

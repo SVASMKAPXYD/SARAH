@@ -5,52 +5,22 @@
  * This offline fixture cannot inspect the RGB, thermal, or depth images. It produces a
  * deterministic action only so the local simulation can be exercised without Gemini.
  */
+import { normDeg } from '../geo';
 import type { Decision, ObservationPacket, TerrainParams } from '../types';
 import { DEFAULT_TERRAIN_PARAMS, describeLight } from './schema';
 
 export function mockDecide(packet: ObservationPacket): Decision {
   const step = packet.mission.step;
   const blocked = /^BLOCKED/.test(packet.last_result);
-  const nodes = packet.map.nodes;
-
-  if (blocked) {
-    const turn = step % 2 === 0 ? 90 : -90;
-    return {
-      observations: `Mock fixture: cannot interpret the sensor images; the previous simulator action was blocked, so it turns ${turn}°.`,
-      map_update: {
-        node_here: packet.pose.at_node ? null : { kind: 'DEAD_END', note: 'Mock fixture: blocked' },
-        new_frontiers: [],
-        frontier_updates: [],
-        edge_annotation: null,
-      },
-      survivor_assessment: 'NO_EVIDENCE',
-      evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
-      intent: 'SCAN',
-      action: { type: 'MOVE', turn_deg: turn, distance_m: 0 },
-      confidence: 0.4,
-      brief_reason: `The offline fixture turns ${turn}° after a collision; it does not analyze images.`,
-    };
-  }
-
-  const turn = step % 4 === 1 ? 45 : step % 4 === 3 ? -45 : 0;
-  const distance = 6;
-  const declareNode = step % 3 === 0;
-  const nodeKind = nodes.length <= 1 ? 'JUNCTION' : 'VIEWPOINT';
-
+  const turn = blocked ? (step % 2 === 0 ? 90 : -90) : step % 4 === 1 ? 45 : step % 4 === 3 ? -45 : 0;
+  const distance = blocked ? 0 : 6;
   return {
-    observations: 'Mock fixture: RGB, thermal, and depth images are not interpreted; this is a deterministic test action.',
-    map_update: {
-      node_here: declareNode ? { kind: nodeKind, note: blocked ? 'Mock: blocked here' : `Mock viewpoint at step ${step}` } : null,
-      new_frontiers: [],
-      frontier_updates: [],
-      edge_annotation: declareNode ? { terrain: 'FOREST', hazard_cost: 0.1 } : null,
-    },
-    survivor_assessment: 'NO_EVIDENCE',
-    evidence: { thermal: 0, rgb_person: 0, bearing_deg: null },
-    intent: 'EXPLORE_FRONTIER',
-    action: { type: 'MOVE', turn_deg: turn, distance_m: distance },
-    confidence: 0.6,
-    brief_reason: `The offline fixture issues a deterministic ${turn}° turn and ${distance} m move.`,
+    bearing_deg: normDeg(packet.pose.heading_deg + turn),
+    distance_m: distance,
+    reason: blocked
+      ? `Offline fixture turns after a collision; it does not analyze sensor images.`
+      : `Offline fixture moves ${distance} m; it does not analyze sensor images.`,
+    replace_entire_memory: packet.memory,
   };
 }
 

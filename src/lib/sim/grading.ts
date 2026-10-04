@@ -4,31 +4,17 @@
  */
 import { GRADING_RADIUS_M } from '../constants';
 import { distance, round, type Vec2 } from '../geo';
-import type { Decision, GradeResult, MapState, MissionOutcome } from '../types';
+import type { GradeResult, MissionOutcome } from '../types';
 import type { World } from '../world/terrain';
 
 export interface GradeInputs {
   world: World;
-  map: MapState;
   markPosition: Vec2 | null;
   decisionsUsed: number;
   budget: number;
   distanceTraveledM: number;
-  decisions: Decision[];
   roverPos: Vec2;
   aborted?: boolean;
-}
-
-export function countLeadsInvestigated(decisions: Decision[]): number {
-  // A "lead" = a run of consecutive INVESTIGATE/APPROACH intents.
-  let leads = 0;
-  let inLead = false;
-  for (const d of decisions) {
-    const investigating = d.intent === 'INVESTIGATE_THERMAL_LEAD' || d.intent === 'APPROACH_CANDIDATE';
-    if (investigating && !inLead) leads++;
-    inLead = investigating;
-  }
-  return leads;
 }
 
 export function gradeMission(i: GradeInputs): GradeResult {
@@ -56,10 +42,7 @@ export function gradeMission(i: GradeInputs): GradeResult {
     markPosition: i.markPosition,
     distanceErrorM,
     decisionsUsed: i.decisionsUsed,
-    leadsInvestigated: countLeadsInvestigated(i.decisions),
     distanceTraveledM: round(i.distanceTraveledM),
-    nodesDeclared: i.map.nodes.length - 1,
-    frontiersDeclared: i.map.frontiers.length,
     returnedToBase,
     summary: summaryMap[outcome],
   };

@@ -4,17 +4,14 @@
  * ground truth) here only for rendering/grading — never serialize it toward Gemini.
  */
 import { create } from 'zustand';
-import { COLLISION_CLEARANCE_MAX_M, DECISION_BUDGET, DEFAULT_SEED } from '@/lib/constants';
+import { DECISION_BUDGET, DEFAULT_SEED } from '@/lib/constants';
 import { DEFAULT_TERRAIN_PARAMS } from '@/lib/gemini/schema';
 import type { Vec2 } from '@/lib/geo';
 import type { ExecState } from '@/lib/sim/executor';
-import { createMapState } from '@/lib/sim/mapStore';
 import type {
-  Assessment,
   Decision,
   FeedEntry,
   GradeResult,
-  MapState,
   ReplayLog,
   RoverState,
   SensorFrame,
@@ -35,15 +32,10 @@ export interface MissionState {
   worldVersion: number;
   animals: AnimalState[];
 
-  // rover + map
+  // rover + driven path
   rover: RoverState;
-  map: MapState;
-  lastNodeId: string;
-  /** Partial polyline since the last node. Cleared when a node is reached; used for edges and retrace. */
-  trace: Vec2[];
   /** Every pose of this run, for the overhead-map trail. Cleared only by reset or regenerate. */
   drivenPath: Vec2[];
-  traceMinClearanceM: number;
   distanceTraveledM: number;
   exec: ExecState | null;
 
@@ -64,8 +56,7 @@ export interface MissionState {
   lastTokens: { input: number; output: number; total: number } | null;
   totalTokens: number;
   lastResult: string;
-  previousAssessment: Assessment;
-  decisions: Decision[];
+  memory: string;
   feed: FeedEntry[];
   markPosition: Vec2 | null;
   grade: GradeResult | null;
@@ -79,7 +70,7 @@ export interface MissionState {
   replaySource: ReplayLog | null;
 }
 
-export const initialRover = (): RoverState => ({ x: 0, z: 0, headingDeg: 0, phase: 'SEARCH', currentNode: 'BASE', step: 0, decisionsUsed: 0 });
+export const initialRover = (): RoverState => ({ x: 0, z: 0, headingDeg: 0, phase: 'SEARCH', step: 0, decisionsUsed: 0 });
 
 export const useMissionStore = create<MissionState>(() => ({
   seed: DEFAULT_SEED,
@@ -89,11 +80,7 @@ export const useMissionStore = create<MissionState>(() => ({
   animals: [],
 
   rover: initialRover(),
-  map: createMapState(),
-  lastNodeId: 'BASE',
-  trace: [],
   drivenPath: [],
-  traceMinClearanceM: COLLISION_CLEARANCE_MAX_M,
   distanceTraveledM: 0,
   exec: null,
 
@@ -112,8 +99,7 @@ export const useMissionStore = create<MissionState>(() => ({
   lastTokens: null,
   totalTokens: 0,
   lastResult: 'Mission start at BASE. No actions yet.',
-  previousAssessment: 'NO_EVIDENCE',
-  decisions: [],
+  memory: '',
   feed: [],
   markPosition: null,
   grade: null,

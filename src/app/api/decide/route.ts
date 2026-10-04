@@ -7,10 +7,10 @@
  */
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { DECISION_BUDGET } from '@/lib/constants';
+import { DECISION_BUDGET, WORLD_HALF_SIZE_M } from '@/lib/constants';
 import { geminiDecide, hasGeminiKey } from '@/lib/gemini/client';
 import { mockDecide } from '@/lib/gemini/mock';
-import { DecisionSchema } from '@/lib/gemini/schema';
+import { DecisionSchema, MEMORY_MAX_CHARS } from '@/lib/gemini/schema';
 import { SENSOR_CALIBRATION } from '@/lib/sim/depth';
 import type { DecideResponse, ObservationPacket } from '@/lib/types';
 
@@ -20,11 +20,31 @@ export const dynamic = 'force-dynamic';
 function isObservationPacket(value: unknown): value is ObservationPacket {
   if (typeof value !== 'object' || value === null) return false;
   const packet = value as Record<string, unknown>;
-  if ('lidar' in packet || typeof packet.pose !== 'object' || packet.pose === null
-    || typeof packet.map !== 'object' || packet.map === null
+  if ('lidar' in packet || 'map' in packet
+    || typeof packet.world !== 'object' || packet.world === null
+    || typeof packet.pose !== 'object' || packet.pose === null
     || typeof packet.mission !== 'object' || packet.mission === null
+    || typeof packet.memory !== 'string' || packet.memory.length > MEMORY_MAX_CHARS
     || typeof packet.last_result !== 'string'
     || typeof packet.sensors !== 'object' || packet.sensors === null) return false;
+  const pose = packet.pose as Record<string, unknown>;
+  if (typeof pose.x !== 'number' || !Number.isFinite(pose.x)
+    || typeof pose.z !== 'number' || !Number.isFinite(pose.z)
+    || typeof pose.heading_deg !== 'number' || !Number.isFinite(pose.heading_deg)) return false;
+  const world = packet.world as Record<string, unknown>;
+  if (world.width_m !== WORLD_HALF_SIZE_M * 2 || world.height_m !== WORLD_HALF_SIZE_M * 2
+    || typeof world.bounds_m !== 'object' || world.bounds_m === null
+    || typeof world.base !== 'object' || world.base === null) return false;
+  const bounds = world.bounds_m as Record<string, unknown>;
+  const base = world.base as Record<string, unknown>;
+  if (bounds.min_x !== -WORLD_HALF_SIZE_M || bounds.max_x !== WORLD_HALF_SIZE_M
+    || bounds.min_z !== -WORLD_HALF_SIZE_M || bounds.max_z !== WORLD_HALF_SIZE_M
+    || base.x !== 0 || base.z !== 0) return false;
+  const mission = packet.mission as Record<string, unknown>;
+  if (typeof mission.step !== 'number' || !Number.isInteger(mission.step)
+    || typeof mission.decisions_remaining !== 'number' || !Number.isInteger(mission.decisions_remaining)
+    || typeof mission.distance_traveled_m !== 'number' || !Number.isFinite(mission.distance_traveled_m)
+    || !['SEARCH', 'EXTRACT', 'COMPLETE'].includes(String(mission.phase))) return false;
   const sensors = packet.sensors as Record<string, unknown>;
   if (!Array.isArray(sensors.image_order)
     || typeof sensors.depth !== 'object' || sensors.depth === null) return false;
