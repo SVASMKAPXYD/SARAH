@@ -48,6 +48,8 @@ export interface ObservationPacket {
   last_result: string;
   /** Verbatim field-team notes; Gemini alone interprets them and chooses actions. */
   field_briefings: string[];
+  /** Reports not yet included in a successful Gemini response. */
+  new_field_briefings: string[];
 }
 
 // ---------------------------------------------------------------------------

@@ -60,6 +60,8 @@ export interface MissionState {
   feed: FeedEntry[];
   /** Verbatim radio calls for Gemini, oldest first. */
   briefings: string[];
+  /** Verbatim reports waiting to be interpreted by Gemini and included in memory. */
+  pendingBriefings: string[];
   markPosition: Vec2 | null;
   grade: GradeResult | null;
 
@@ -104,6 +106,7 @@ export const useMissionStore = create<MissionState>(() => ({
   memory: '',
   feed: [],
   briefings: [],
+  pendingBriefings: [],
   markPosition: null,
   grade: null,
 

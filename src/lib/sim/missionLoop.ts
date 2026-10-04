@@ -21,7 +21,7 @@ import { initAnimals, stepAnimals } from '../world/animals';
 import { generateWorld } from '../world/terrain';
 import { planAction, startExecution, tickExecution, type ActionPlan } from './executor';
 import { gradeMission } from './grading';
-import { buildPacket } from './packetBuilder';
+import { acknowledgeFieldBriefings, buildPacket } from './packetBuilder';
 import { createReplayLog, hashPacket, loadReplay, recordEntry, ReplayPlayer, serializeReplay } from './replay';
 import type { DynamicBodies } from './collisions';
 import { initialRover, useMissionStore, type DeciderMode, type DecisionSource, type MissionState } from '@/store/missionStore';
@@ -108,6 +108,7 @@ export class MissionController {
       memory: '',
       feed: [],
       briefings: [],
+      pendingBriefings: [],
       markPosition: null,
       grade: null,
       frame: null,
@@ -157,7 +158,7 @@ export class MissionController {
     this.set({ seed });
   }
 
-  /** Save a field briefing verbatim for Gemini's next decision. */
+  /** Queue a field briefing for interpretation and a full memory rewrite by Gemini. */
   submitBriefing(raw: string): { ok: boolean; error?: string } {
     if (!raw.trim()) return { ok: false, error: 'Enter a briefing first.' };
     if (raw.length > 500) return { ok: false, error: 'Briefings must be 500 characters or fewer.' };
@@ -165,8 +166,9 @@ export class MissionController {
     const s = this.s;
     if (!s.world) return { ok: false, error: 'The map is not ready yet.' };
     const briefings = [...s.briefings, raw].slice(-24);
-    this.set({ briefings });
-    this.feed('system', 'Field briefing saved verbatim for Gemini’s next decision.');
+    const pendingBriefings = [...s.pendingBriefings, raw].slice(-24);
+    this.set({ briefings, pendingBriefings });
+    this.feed('system', 'New field report queued for Gemini to interpret and incorporate into its complete memory on the next request.');
     return { ok: true };
   }
 
@@ -320,6 +322,7 @@ export class MissionController {
       lastResult: s.lastResult,
       budget: s.budget,
       fieldBriefings: s.briefings,
+      newFieldBriefings: s.pendingBriefings,
     });
   }
 
@@ -441,6 +444,11 @@ export class MissionController {
     this.feed('decision', `${decision.reason} → ${actionText}`, { decision, latencyMs: meta.latencyMs, model: meta.model, source: meta.source });
     if (decision.replace_entire_memory !== s.memory) {
       this.feed('system', 'Gemini replaced its persistent memory.');
+    }
+    if (meta.source === 'gemini' && packet.new_field_briefings.length > 0) {
+      this.set((state) => ({
+        pendingBriefings: acknowledgeFieldBriefings(state.pendingBriefings, packet.new_field_briefings),
+      }));
     }
     // MARK plans have no motion: resolve them now so last_result is reported and
     // the loop asks for the next decision instead of stalling on a DONE executor.

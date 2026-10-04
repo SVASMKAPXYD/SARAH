@@ -29,6 +29,9 @@ function isObservationPacket(value: unknown): value is ObservationPacket {
     || !Array.isArray(packet.field_briefings)
     || packet.field_briefings.length > 24
     || packet.field_briefings.some((briefing) => typeof briefing !== 'string' || briefing.length > 500)
+    || !Array.isArray(packet.new_field_briefings)
+    || packet.new_field_briefings.length > 24
+    || packet.new_field_briefings.some((briefing) => typeof briefing !== 'string' || briefing.length > 500)
     || typeof packet.sensors !== 'object' || packet.sensors === null) return false;
   const pose = packet.pose as Record<string, unknown>;
   if (typeof pose.x !== 'number' || !Number.isFinite(pose.x)

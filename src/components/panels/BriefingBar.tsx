@@ -9,6 +9,7 @@ import { useMissionStore } from '@/store/missionStore';
 export default function BriefingBar({ immersive }: { immersive: boolean }) {
   const { submitBriefing } = useMission();
   const briefings = useMissionStore((s) => s.briefings);
+  const pendingBriefings = useMissionStore((s) => s.pendingBriefings);
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +42,7 @@ export default function BriefingBar({ immersive }: { immersive: boolean }) {
       className={`relative z-30 shrink-0 ${shell}`}
       data-briefing-bar
       data-briefing-count={briefings.length}
+      data-pending-briefing-count={pendingBriefings.length}
     >
       <form className="flex items-center gap-2 px-2 pt-2" onSubmit={send}>
         <label htmlFor="sarah-briefing" className="sr-only">Send field information to Gemini</label>
@@ -61,8 +63,13 @@ export default function BriefingBar({ immersive }: { immersive: boolean }) {
       </form>
       {error && <p className="px-2 pt-1 text-xs text-rose-600">{error}</p>}
       <p className={`px-2 pt-1 text-[11px] ${immersive ? 'text-slate-300' : 'text-slate-600'}`}>
-        Field reports are sent verbatim to Gemini. Gemini alone decides how to use them.
+        New reports are sent verbatim to Gemini, which interprets them and updates its full memory on its next response. Gemini alone chooses navigation.
       </p>
+      {pendingBriefings.length > 0 && (
+        <p role="status" className={`px-2 pt-1 text-[11px] ${immersive ? 'text-amber-200' : 'text-amber-800'}`}>
+          {pendingBriefings.length} new {pendingBriefings.length === 1 ? 'report' : 'reports'} queued for Gemini.
+        </p>
+      )}
       {recent.length > 0 && (
         <ul className="flex gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Recent field reports sent to Gemini">
           {recent.map((briefing, index) => {

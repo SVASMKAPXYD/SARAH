@@ -13,6 +13,7 @@ export interface PacketInputs {
   lastResult: string;
   budget?: number;
   fieldBriefings?: string[];
+  newFieldBriefings?: string[];
 }
 
 export function buildPacket(i: PacketInputs): ObservationPacket {
@@ -44,5 +45,14 @@ export function buildPacket(i: PacketInputs): ObservationPacket {
     memory: i.memory,
     last_result: i.lastResult,
     field_briefings: i.fieldBriefings ?? [],
+    new_field_briefings: i.newFieldBriefings ?? [],
   };
+}
+
+/** Remove only the queued reports included in a completed Gemini request. */
+export function acknowledgeFieldBriefings(pending: string[], included: string[]): string[] {
+  if (included.length > pending.length || included.some((briefing, index) => pending[index] !== briefing)) {
+    return pending;
+  }
+  return pending.slice(included.length);
 }
