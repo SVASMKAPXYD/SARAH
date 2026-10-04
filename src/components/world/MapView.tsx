@@ -9,6 +9,7 @@ import { Line } from '@react-three/drei';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import { WORLD_HALF_SIZE_M } from '@/lib/constants';
+import { BELIEF_CELL_M, compassLabel, previewCommand } from '@/lib/sim/briefing';
 import type { World } from '@/lib/world/terrain';
 import { useMissionStore } from '@/store/missionStore';
 import { lightingFor, TruthLayerToggle, WorldMeshes } from './Scene';
@@ -212,6 +213,78 @@ function SurvivorPing({ phaseOffset }: { phaseOffset: number }) {
   );
 }
 
+function BeliefHeat({ world }: { world: World }) {
+  const belief = useMissionStore((s) => s.belief);
+  const ref = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh || !belief) return;
+    mesh.frustumCulled = false;
+    const dummy = new THREE.Object3D();
+    belief.cells.forEach((c, i) => {
+      dummy.position.set(c.x, world.heightAt(c.x, c.z) + 0.55, c.z);
+      dummy.rotation.set(-Math.PI / 2, 0, 0);
+      dummy.scale.set(BELIEF_CELL_M * 0.92, BELIEF_CELL_M * 0.92, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.count = belief.cells.length;
+    mesh.instanceMatrix.needsUpdate = true;
+  }, [belief, world]);
+  if (!belief || belief.cells.length === 0) return null;
+  return (
+    <instancedMesh key={belief.cells.length} ref={ref} args={[undefined, undefined, belief.cells.length]} renderOrder={6}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial color="#f59e0b" transparent opacity={0.22 + belief.strength * 0.5} depthTest={false} toneMapped={false} side={THREE.DoubleSide} />
+    </instancedMesh>
+  );
+}
+
+function BeliefMarkers({ world }: { world: World }) {
+  const belief = useMissionStore((s) => s.belief);
+  const aim = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = aim.current;
+    if (!g) return;
+    const { belief: live, rover } = useMissionStore.getState();
+    if (!live) {
+      g.visible = false;
+      return;
+    }
+    const preview = previewCommand(rover.headingDeg, rover, live);
+    g.visible = true;
+    g.position.set(preview.aim.x, world.heightAt(preview.aim.x, preview.aim.z) + 0.8, preview.aim.z);
+  });
+  return (
+    <>
+      {belief && (
+        <group position={[belief.focus.x, world.heightAt(belief.focus.x, belief.focus.z) + 0.75, belief.focus.z]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={7}>
+          <mesh>
+            <ringGeometry args={[2.4, 3.1, 28]} />
+            <meshBasicMaterial color="#fde68a" depthTest={false} toneMapped={false} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      )}
+      <group ref={aim} rotation={[-Math.PI / 2, 0, 0]} renderOrder={8}>
+        <mesh>
+          <circleGeometry args={[1.35, 20]} />
+          <meshBasicMaterial color="#fbbf24" depthTest={false} toneMapped={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+    </>
+  );
+}
+
+function SearchCaption() {
+  const belief = useMissionStore((s) => s.belief);
+  if (!belief) return null;
+  return (
+    <div className="pointer-events-none absolute bottom-2 left-1/2 z-10 max-w-[90%] -translate-x-1/2 truncate rounded border border-amber-700/50 bg-amber-50/95 px-2 py-0.5 text-[11px] font-medium text-amber-950 shadow-sm">
+      Search {compassLabel(belief.focusBearingDeg)} · {Math.round(belief.strength * 100)}%
+    </div>
+  );
+}
+
 function ZoomButton({ label, onClick, children }: { label: string; onClick: () => void; children: string }) {
   return (
     <button
@@ -248,6 +321,8 @@ export default function MapView() {
           <group key={worldVersion}>
             <WorldMeshes world={world} />
             <PathHistory world={world} />
+            <BeliefHeat world={world} />
+            <BeliefMarkers world={world} />
             <RobotBeacon world={world} />
             <SurvivorBeacon world={world} />
           </group>
@@ -256,6 +331,7 @@ export default function MapView() {
         <TruthLayerToggle />
         <OverheadCamera heightRef={heightRef} />
       </Canvas>
+      <SearchCaption />
       <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex flex-col gap-1">
         <ZoomButton label="Zoom in" onClick={() => zoomBy(0.8)}>
           +

@@ -45,7 +45,13 @@ interpret it; depth alone does not identify objects. The simulator stops movemen
 physical obstacles.
 
 Use the thermal image along with the other data to determine if it is a hiker or a wild animal
-A bright or hot signature alone does not prove that the target is the hiker: animals are intentional decoys. 
+A bright or hot signature alone does not prove that the target is the hiker: animals are intentional decoys.
+
+If the packet includes search_guidance, the field team has radioed clues about the hiker.
+strength (0 to 1) is how strongly those clues should shift the search: a high value means
+move toward focus_bearing_deg, a low value means only a modest bias. Remember the clues in
+memory. Set bearing_deg to the heading you would search next from the sensors and your
+coverage; the simulator blends in the guidance by strength, so do not pre-steer.
 
 Use the images and your memory directly. No local planner or evidence rule will choose for
 you. Output JSON only with absolute bearing_deg (0° north, clockwise, 0–360), distance_m
