@@ -43,6 +43,7 @@ export function useMission() {
       regenerate: (seed?: number, params?: Parameters<typeof controller.regenerate>[1]) => controller.regenerate(seed, params),
       setDeciderMode: (m: Parameters<typeof controller.setDeciderMode>[0]) => controller.setDeciderMode(m),
       submitManualDecision: (raw: unknown) => controller.submitManualDecision(raw),
+      submitBriefing: (text: string) => controller.submitBriefing(text),
       downloadReplay: () => controller.downloadReplay(),
     }),
     [controller, status, deciderMode],

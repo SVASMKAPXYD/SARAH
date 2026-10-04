@@ -10,6 +10,7 @@ import ManualConsole from '@/components/panels/ManualConsole';
 import MetricsStrip from '@/components/panels/MetricsStrip';
 import ResultCard from '@/components/panels/ResultCard';
 import TerrainChat from '@/components/panels/TerrainChat';
+import BriefingBar from '@/components/panels/BriefingBar';
 import ThoughtPanel from '@/components/panels/ThoughtPanel';
 import GraphOverlay from '@/components/world/GraphOverlay';
 import MapView from '@/components/world/MapView';
@@ -278,7 +279,8 @@ export default function Stage() {
   };
 
   return (
-    <div className={`${immersive ? 'relative bg-slate-950 text-slate-100' : 'flex flex-col bg-[#d7e4f0] text-slate-900'} h-dvh w-full overflow-hidden`} data-layout={layout} data-status={status} data-phase={phase} data-seed={seed}>
+    <div className={`flex h-dvh w-full flex-col overflow-hidden ${immersive ? 'bg-slate-950 text-slate-100' : 'bg-[#d7e4f0] text-slate-900'}`} data-layout={layout} data-status={status} data-phase={phase} data-seed={seed}>
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <h1 className="sr-only">SARAH</h1>
       <header className={`${immersive
         ? 'absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-slate-950/80 to-transparent pr-[min(380px,38vw)]'
@@ -432,6 +434,8 @@ export default function Stage() {
           </div>
         </div>
       )}
+      </div>
+      <BriefingBar immersive={immersive} />
 
       {chatOpen && (
         <div className="fixed right-3 top-14 z-50 flex max-h-[calc(100vh-4.5rem)] w-[min(400px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-[#8ea3b8] bg-white shadow-xl">
@@ -448,7 +452,7 @@ export default function Stage() {
       )}
 
       {toolsOpen && (
-        <div className="fixed bottom-3 right-3 top-14 z-40 flex w-[min(420px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-100 shadow-2xl" style={{ colorScheme: 'dark' }}>
+        <div className="fixed bottom-[7.25rem] right-3 top-14 z-40 flex w-[min(420px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 text-zinc-100 shadow-2xl" style={{ colorScheme: 'dark' }}>
           <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-3 py-2">
             <h2 className="text-sm font-medium">Session</h2>
             <button type="button" aria-label="Close session tools" onClick={() => setToolsOpen(false)} className="grid h-7 w-7 place-items-center rounded text-zinc-300 hover:bg-zinc-800">

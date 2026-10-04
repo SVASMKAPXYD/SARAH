@@ -17,6 +17,7 @@ import type {
   SensorFrame,
   TerrainParams,
 } from '@/lib/types';
+import type { FieldBriefing, SearchBelief } from '@/lib/sim/briefing';
 import type { AnimalState } from '@/lib/world/animals';
 import type { World } from '@/lib/world/terrain';
 
@@ -58,6 +59,10 @@ export interface MissionState {
   lastResult: string;
   memory: string;
   feed: FeedEntry[];
+  /** Radio calls from the search party, oldest first. */
+  briefings: FieldBriefing[];
+  /** Where those calls currently pull the search. Null when none apply. */
+  belief: SearchBelief | null;
   markPosition: Vec2 | null;
   grade: GradeResult | null;
 
@@ -101,6 +106,8 @@ export const useMissionStore = create<MissionState>(() => ({
   lastResult: 'Mission start at BASE. No actions yet.',
   memory: '',
   feed: [],
+  briefings: [],
+  belief: null,
   markPosition: null,
   grade: null,
 
